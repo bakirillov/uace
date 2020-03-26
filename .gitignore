@@ -1,6 +1,7 @@
 capsules/*
 __pycache__/*
 .ipynb_checkpoints/*
+CoordConv/*
 *.ptch
 *.pkl
 *.csv
