@@ -1,0 +1,7 @@
+capsules/*
+__pycache__/*
+.ipynb_checkpoints/*
+*.ptch
+*.pkl
+*.csv
+*.json

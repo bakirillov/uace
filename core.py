@@ -799,6 +799,74 @@ class DKL(DeepGP):
         else:
             return(output, rec)
         
+    def fit(self, train_set_loader, test_set_loader, epochs, scheduler, optimizer, mll, filename):
+        for a in np.arange(epochs):
+            running_loss = []
+            running_mll = []
+            running_rec = []
+            running_targets = []
+            running_preds = []
+            self.train()
+            print("Training, epoch #"+str(a)+", "+str(len(train_set_loader)))
+            for i,b in tqdm(enumerate(train_set_loader)):
+                sequence, targets = b
+                running_targets.append(targets[:,0].data.numpy())
+                targets = targets.cuda()
+                optimizer.zero_grad()
+                output, reconstruction = self.forward(sequence)
+                prediction = self.likelihood(output).mean.mean(0)
+                loss = -mll(output, targets[:,0])
+                loss.backward()
+                optimizer.step()
+                predictions = prediction.cpu().data.numpy()
+                running_preds.append(predictions)
+                running_loss.append(loss.cpu().data.numpy())
+                running_mll.append(cmll.cpu().data.numpy())
+                running_rec.append(rcls.cpu().data.numpy())
+            training["mse"].append(
+                mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets))
+            )
+            training["loss"].append(np.mean(running_loss))
+            training["mll"].append(np.mean(running_mll))
+            training["rec"].append(np.mean(running_rec))
+            print(
+                "Training statistics: "+str(training["loss"][-1])+"; "+str(training["mse"][-1]),
+                np.unique(np.concatenate(running_preds)).shape
+            )
+            running_loss = []
+            running_targets = []
+            running_preds = []
+            self.eval()
+            running_loss = []
+            running_targets = []
+            running_preds = []
+            print("Validation, epoch #"+str(a)+", "+str(len(val_set_loader)))
+            for i,b in tqdm(enumerate(val_set_loader)):
+                sequence, target = b
+                running_targets.append(target.data.numpy())
+                target = target.cuda()
+                output, _ = self.forward(sequence)
+                loss = -mll(output, target)
+                predictions = self.likelihood(output).mean.mean(0).cpu().data.numpy()
+                running_preds.append(predictions)
+                running_loss.append(loss.cpu().data.numpy())
+            validation["mse"].append(
+                mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets))
+            )
+            validation["r-squared"].append(
+                pearsonr(
+                    np.concatenate(running_targets), np.concatenate(running_preds).ravel()
+                )[0]**2
+            )
+            validation["loss"].append(np.mean(running_loss))
+            torch.save(self.state_dict(), filename)
+            print(
+                "Validation statistics: "+str(validation["loss"][-1])+"; "+str(validation["mse"][-1]),
+                np.unique(np.concatenate(running_preds)).shape, str(validation["r-squared"][-1])
+            )
+            scheduler.step()
+        return(training, testing, validation)
+        
         
 class WeissmanDataset(Dataset):
     
