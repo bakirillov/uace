@@ -49,6 +49,29 @@ from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical, DeepApproxi
 from sklearn.metrics import mean_absolute_error, mean_squared_error, median_absolute_error
 
 
+def in_CI(ys, y_hats, stds):
+    confs = {
+        "0.68": [],
+        "0.95": [],
+        "0.997": []
+    }
+    for y,y_hat,std in zip(ys, y_hats, stds):
+        one_sigma = [y_hat-std, y_hat+std]
+        if y>=one_sigma[0] and y<=one_sigma[1]:
+            confs["0.68"].append(1)
+        else:
+            confs["0.68"].append(0)
+        two_sigma = [y_hat-2*std, y_hat+2*std]
+        if y>=two_sigma[0] and y<=two_sigma[1]:
+            confs["0.95"].append(1)
+        else:
+            confs["0.95"].append(0)
+        three_sigma = [y_hat-3*std, y_hat+3*std]
+        if y>=three_sigma[0] and y<=three_sigma[1]:
+            confs["0.997"].append(1)
+        else:
+            confs["0.997"].append(0)
+    return(pd.DataFrame(confs))
 
 def rsquared(a, b):
     return(float(pearsonr(a, b)[0]**2))
@@ -823,7 +846,6 @@ class DKL(DeepGP):
                 optimizer.step()
                 predictions = prediction.cpu().data.numpy()
                 running_preds.append(predictions)
-                running_loss.append(loss.cpu().data.numpy())
             training["mse"].append(
                 float(mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets)))
             )
@@ -832,7 +854,7 @@ class DKL(DeepGP):
             )
             print(
                 "Training statistics: "+str(training["mse"][-1]),
-                np.unique(np.concatenate(running_preds)).shape
+                np.unique(np.concatenate(running_preds)).shape, str(training["metric"][-1])
             )
             self.eval()
             running_targets = []
@@ -846,7 +868,6 @@ class DKL(DeepGP):
                 loss = -mll(output, target)
                 predictions = self.likelihood(output).mean.mean(0).cpu().data.numpy()
                 running_preds.append(predictions)
-                running_loss.append(loss.cpu().data.numpy())
             validation["mse"].append(
                 float(mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets)))
             )

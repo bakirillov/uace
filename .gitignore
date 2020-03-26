@@ -8,3 +8,4 @@ src/*.ptch
 src/*.pkl
 src/*.csv
 src/*.json
+models/*

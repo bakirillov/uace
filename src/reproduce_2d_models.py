@@ -5,9 +5,11 @@
 
 
 import os
-import umap
+import json
 import torch
+import warnings
 import gpytorch
+import argparse
 import itertools
 from core import *
 import numpy as np
@@ -47,6 +49,8 @@ from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical, DeepApproxi
 from sklearn.metrics import mean_absolute_error, mean_squared_error, median_absolute_error
 from sklearn.metrics import accuracy_score, matthews_corrcoef, precision_score, recall_score
 
+
+warnings.filterwarnings("ignore")
 
 
 if __name__ == "__main__":
@@ -134,6 +138,6 @@ if __name__ == "__main__":
     with open(args.output+".json", "w") as oh:
         oh.write(
             json.dumps(
-                {"training": training, "validation": validation}
+                {"training": training, "validation": validation, "y": y, "y_hat": y_hat, "y_hat_std": y_hat_std}
             )
         )
