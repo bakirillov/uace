@@ -32,6 +32,7 @@ from matplotlib.patches import Patch
 from sklearn.externals import joblib
 from sklearn.metrics import accuracy_score
 from torchvision import models, transforms
+from scipy.stats import pearsonr, spearmanr
 from gpytorch.priors import SmoothedBoxPrior
 from torch.utils.data import DataLoader, Dataset
 from gpytorch.models import ApproximateGP, ExactGP
@@ -48,6 +49,9 @@ from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical, DeepApproxi
 from sklearn.metrics import mean_absolute_error, mean_squared_error, median_absolute_error
 
 
+
+def rsquared(a, b):
+    return(float(pearsonr(a, b)[0]**2))
 
 
 def iterate_minibatches(X, y, batchsize, permute=False):
@@ -799,11 +803,10 @@ class DKL(DeepGP):
         else:
             return(output, rec)
         
-    def fit(self, train_set_loader, test_set_loader, epochs, scheduler, optimizer, mll, filename):
+    def fit(self, train_set_loader, val_set_loader, epochs, scheduler, optimizer, mll, filename, metric):
+        training = {"mse": [], "metric": []}
+        validation = {"mse": [], "metric": []}
         for a in np.arange(epochs):
-            running_loss = []
-            running_mll = []
-            running_rec = []
             running_targets = []
             running_preds = []
             self.train()
@@ -821,23 +824,17 @@ class DKL(DeepGP):
                 predictions = prediction.cpu().data.numpy()
                 running_preds.append(predictions)
                 running_loss.append(loss.cpu().data.numpy())
-                running_mll.append(cmll.cpu().data.numpy())
-                running_rec.append(rcls.cpu().data.numpy())
             training["mse"].append(
-                mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets))
+                float(mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets)))
             )
-            training["loss"].append(np.mean(running_loss))
-            training["mll"].append(np.mean(running_mll))
-            training["rec"].append(np.mean(running_rec))
+            training["metric"].append(
+                metric(np.concatenate(running_targets), np.concatenate(running_preds).ravel())
+            )
             print(
-                "Training statistics: "+str(training["loss"][-1])+"; "+str(training["mse"][-1]),
+                "Training statistics: "+str(training["mse"][-1]),
                 np.unique(np.concatenate(running_preds)).shape
             )
-            running_loss = []
-            running_targets = []
-            running_preds = []
             self.eval()
-            running_loss = []
             running_targets = []
             running_preds = []
             print("Validation, epoch #"+str(a)+", "+str(len(val_set_loader)))
@@ -851,21 +848,18 @@ class DKL(DeepGP):
                 running_preds.append(predictions)
                 running_loss.append(loss.cpu().data.numpy())
             validation["mse"].append(
-                mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets))
+                float(mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets)))
             )
-            validation["r-squared"].append(
-                pearsonr(
-                    np.concatenate(running_targets), np.concatenate(running_preds).ravel()
-                )[0]**2
+            validation["metric"].append(
+                metric(np.concatenate(running_targets), np.concatenate(running_preds).ravel())
             )
-            validation["loss"].append(np.mean(running_loss))
-            torch.save(self.state_dict(), filename)
+            torch.save(self.state_dict(), filename+str(a)+".ptch")
             print(
-                "Validation statistics: "+str(validation["loss"][-1])+"; "+str(validation["mse"][-1]),
-                np.unique(np.concatenate(running_preds)).shape, str(validation["r-squared"][-1])
+                "Validation statistics: "+str(validation["mse"][-1]),
+                np.unique(np.concatenate(running_preds)).shape, str(validation["metric"][-1])
             )
             scheduler.step()
-        return(training, testing, validation)
+        return(training, validation)
         
         
 class WeissmanDataset(Dataset):
