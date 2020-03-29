@@ -6,6 +6,7 @@
 
 import os
 import json
+import math
 import torch
 import warnings
 import gpytorch
@@ -50,7 +51,14 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, median_abso
 from sklearn.metrics import accuracy_score, matthews_corrcoef, precision_score, recall_score
 
 
-warnings.filterwarnings("ignore")
+def get_Cas9_transformer():
+    u = OneHotAndCut("NGG", False, False, fold=False)
+    transformer = transforms.Compose(
+        [
+            u, ToTensor(cudap=True)
+        ]
+    )
+    return(transformer)
 
 
 if __name__ == "__main__":
@@ -67,8 +75,8 @@ if __name__ == "__main__":
         dest="dataset",
         action="store", 
         help="set the dataset",
-        choices=["Weissman", "Cpf1"],
-        default="Weissman"
+        choices=["WT", "eSpCas9", "SpCas9HF1"],
+        default="WT"
     )
     parser.add_argument(
         "-o", "--output",
@@ -81,7 +89,15 @@ if __name__ == "__main__":
         dest="seed",
         action="store", 
         help="set the seed for prng",
-        default=99
+        default=192
+    )
+    parser.add_argument(
+        "-m", "--model",
+        dest="model",
+        action="store", 
+        help="set the type of model",
+        choices=["CNN", "RNN"],
+        default="RNN"
     )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
@@ -89,29 +105,40 @@ if __name__ == "__main__":
     torch.cuda.manual_seed(int(args.seed))
     with open(args.config, "r") as ih:
         config = json.load(ih)
-    if args.dataset == "Weissman":
-        data = pd.read_table(
-            config["WeissmanDatasetPath"], index_col=0
-        )
-        series = data['perfect match sgRNA']
-        print('series:', series.shape)
-        val_series = np.random.choice(np.unique(series), size=int(len(np.unique(series))*.20), replace=False)
-        val_indices = np.where(np.isin(series, val_series))
-        train_indices = np.where(~np.isin(series, val_series))
-        u = ImperfectMatchTransform("NGG", False, False, fold=False, cut_at_start=2, cut_at_end=1)
-        transformer = transforms.Compose(
-            [
-                u, ToTensor(cudap=True)
-            ]
-        )
-        train_set = WeissmanDataset(data, train_indices, transformer)
-        val_set = WeissmanDataset(data, val_indices, transformer, n_bins=0)
-        train_set_loader = DataLoader(train_set, shuffle=True, batch_size=config["batch_size"])
-        val_set_loader = DataLoader(val_set, shuffle=True, batch_size=config["batch_size"])
-        encoder = GuideHN2d(
-            23, capsule_dimension=32, n_routes=1600, n_classes=5, n_channels=2,
-        ).cuda()
-        model = DKL(encoder, [1,5*32]).cuda().eval()
+    transformer = get_Cas9_transformer()
+    DEEPHFPATH = config["DEEPHFPATH"]
+    data = pd.read_excel(DEEPHFPATH, header=1)
+    if args.dataset == "WT":
+        data = data[["21mer", "Wt_Efficiency"]].dropna()
+        what = "Wt_Efficiency"
+    elif args.dataset == "eSpCas9":
+        data = data[["21mer", "eSpCas 9_Efficiency"]].dropna()
+        what = "eSpCas 9_Efficiency"
+    elif args.dataset == "SpCas9HF1":
+        data = data[["21mer", "SpCas9-HF1_Efficiency"]].dropna()
+        what = "SpCas9-HF1_Efficiency"
+    train_X, testval_X, _, _ = train_test_split(
+        np.arange(data.shape[0]), np.arange(data.shape[0]), test_size=0.085+0.15
+    )
+    test_X, val_X, _, _ = train_test_split(
+        testval_X, testval_X, test_size=0.085/(0.085+0.15)
+    )
+    train_set = DeepCRISPRDataset(
+        data, train_X, transformer, sequence_column="21mer", label_column=what
+    )
+    test_set = DeepCRISPRDataset(
+        data, test_X, transformer, sequence_column="21mer", label_column=what
+    )
+    val_set = DeepCRISPRDataset(
+        data, val_X, transformer, sequence_column="21mer", label_column=what
+    )
+    train_set_loader = DataLoader(train_set, shuffle=True, batch_size=256)
+    val_set_loader = DataLoader(val_set, shuffle=True, batch_size=256)
+    if args.model == "RNN":
+        encoder = GuideHRNN(21, 32, 3360, n_classes=5).cuda()
+    elif args.model == "CNN":
+        encoder = GuideHN(21, 32, 1360, n_classes=5).cuda()
+    model = DKL(encoder, [1,5*32]).cuda().eval()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
     print('X validation:', len(val_set))
@@ -122,12 +149,12 @@ if __name__ == "__main__":
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
         train_set_loader, val_set_loader, EPOCHS, 
-        scheduler, optimizer, mll, args.output, rsquared
+        scheduler, optimizer, mll, args.output, lambda a,b: float(spearmanr(a, b)[0])
     )
     y_hat = []
     y = []
     y_hat_std = []
-    for i,b in tqdm(enumerate(val_set)):
+    for i,b in tqdm(enumerate(test_set)):
         sequence, target = b
         y.append(float(target))
         ss = sequence.shape
@@ -139,8 +166,8 @@ if __name__ == "__main__":
         oh.write(
             json.dumps(
                 {
-                    "training": training, "validation": validation, "y": y, 
-                    "y_hat": y_hat, "y_hat_std": y_hat_std
+                    "training": training, "validation": validation, 
+                    "y": y, "y_hat": y_hat, "y_hat_std": y_hat_std
                 }
             )
         )

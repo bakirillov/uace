@@ -216,27 +216,6 @@ class GRUPrimaryCapsuleLayer(PrimaryCapsuleLayer):
             dim=-1
         )
         return(squash(out))
-    
-    
-class DualLine(nn.Module):
-    
-    def __init__(self):
-        self.alpha = nn.Parameter(
-            torch.randn()
-        )
-        self.beta = nn.Parameter(
-            torch.randn()
-        )
-        self.mu = nn.Parameter(-0.22)
-        
-    def once(self, x):
-        return(
-            torch.cat([self.alpha*a+self.mu if a < 0 else self.beta*a + self.mu for a in x])
-        )
-        
-    def forward(self, x):
-        y = torch.stack([self.once(a) for a in x])
-        return(y)
 
     
 class GuideCaps(nn.Module):
@@ -836,12 +815,14 @@ class DKL(DeepGP):
             print("Training, epoch #"+str(a)+", "+str(len(train_set_loader)))
             for i,b in tqdm(enumerate(train_set_loader)):
                 sequence, targets = b
-                running_targets.append(targets[:,0].data.numpy())
+                #print(targets.shape)
+                targets = targets.reshape(-1)
+                running_targets.append(targets.data.numpy())
                 targets = targets.cuda()
                 optimizer.zero_grad()
                 output, reconstruction = self.forward(sequence)
                 prediction = self.likelihood(output).mean.mean(0)
-                loss = -mll(output, targets[:,0])
+                loss = -mll(output, targets)
                 loss.backward()
                 optimizer.step()
                 predictions = prediction.cpu().data.numpy()
@@ -1000,3 +981,45 @@ class GuideHN2d(nn.Module):
             masked_internal.reshape(masked_internal.shape[0], -1)
         )
         return(internal, lengths, reconstructions)
+    
+    
+class DeepHFDataset(Dataset):
+    
+    def __init__(
+        self, dataframe, indices, transform=None,
+        sequence_column="sgRNA", label_column="Normalized efficacy", labelling="Smart"
+    ):
+        self.transform = transform
+        self.S = dataframe.iloc[indices]
+        self.sequence_column = sequence_column
+        self.label_column = label_column
+        self.labelling = labelling
+        
+    def __len__(self):
+        return(self.S.shape[0])
+    
+    def __getitem__(self, ind):
+        target=self.S.iloc[ind][self.label_column]
+        sequence=self.S.iloc[ind][self.sequence_column]
+        transformed = self.transform(sequence)
+        return(transformed, target)
+    
+    
+class GeCRISPRDataset(Dataset):
+    
+    def __init__(self, file, indices, transform=None, classification=True):
+        self.transform = transform
+        self.classification = classification
+        self.S = pd.read_csv(file, sep=" ", header=None).iloc[indices]
+    
+    def __len__(self):
+        return(self.S.shape[0])
+    
+    def __getitem__(self, ind):
+        if self.classification:
+            target=[-1,1].index(self.S.iloc[ind][0])
+        else:
+            target=self.S.iloc[ind][0]/100
+        sequence=self.S.iloc[ind][1]
+        transformed = self.transform(sequence)
+        return(transformed, target)
