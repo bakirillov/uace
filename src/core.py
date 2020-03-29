@@ -49,6 +49,17 @@ from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical, DeepApproxi
 from sklearn.metrics import mean_absolute_error, mean_squared_error, median_absolute_error
 
 
+
+
+def get_Cas9_transformer():
+    u = OneHotAndCut("NGG", False, False, fold=False)
+    transformer = transforms.Compose(
+        [
+            u, ToTensor(cudap=True)
+        ]
+    )
+    return(transformer)
+
 def in_CI(ys, y_hats, stds):
     confs = {
         "0.68": [],

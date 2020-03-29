@@ -61,14 +61,6 @@ if __name__ == "__main__":
         default="config.json"
     )
     parser.add_argument(
-        "-d", "--dataset",
-        dest="dataset",
-        action="store", 
-        help="set the dataset",
-        choices=["WT", "eSpCas9", "SpCas9HF1"],
-        default="WT"
-    )
-    parser.add_argument(
         "-o", "--output",
         dest="output",
         action="store", 
@@ -80,6 +72,14 @@ if __name__ == "__main__":
         action="store", 
         help="set the seed for prng",
         default=192
+    )
+    parser.add_argument(
+        "-l", "--line",
+        dest="line",
+        action="store", 
+        help="set the cell line for test set",
+        choices=["hela", "hek293t", "hl60"],
+        default="hela"
     )
     parser.add_argument(
         "-m", "--model",
@@ -96,38 +96,20 @@ if __name__ == "__main__":
     with open(args.config, "r") as ih:
         config = json.load(ih)
     transformer = get_Cas9_transformer()
-    DEEPHFPATH = config["DEEPHFPATH"]
-    data = pd.read_excel(DEEPHFPATH, header=1)
-    if args.dataset == "WT":
-        data = data[["21mer", "Wt_Efficiency"]].dropna()
-        what = "Wt_Efficiency"
-    elif args.dataset == "eSpCas9":
-        data = data[["21mer", "eSpCas 9_Efficiency"]].dropna()
-        what = "eSpCas 9_Efficiency"
-    elif args.dataset == "SpCas9HF1":
-        data = data[["21mer", "SpCas9-HF1_Efficiency"]].dropna()
-        what = "SpCas9-HF1_Efficiency"
-    train_X, testval_X, _, _ = train_test_split(
-        np.arange(data.shape[0]), np.arange(data.shape[0]), test_size=0.085+0.15
+    T3619PATH = config["T3619PATH"]
+    V520PATH = config["V520PATH"]
+    train_X_T3619, test_X_T3619, _, _ = train_test_split(
+        np.arange(3619), np.arange(3619), test_size=0.2
     )
-    test_X, val_X, _, _ = train_test_split(
-        testval_X, testval_X, test_size=0.085/(0.085+0.15)
-    )
-    train_set = DeepCRISPRDataset(
-        data, train_X, transformer, sequence_column="21mer", label_column=what
-    )
-    test_set = DeepCRISPRDataset(
-        data, test_X, transformer, sequence_column="21mer", label_column=what
-    )
-    val_set = DeepCRISPRDataset(
-        data, val_X, transformer, sequence_column="21mer", label_column=what
-    )
+    train_set = GeCRISPRDataset(T3619PATH, train_X_T3619, transform=transformer, classification=False)
+    val_set = GeCRISPRDataset(T3619PATH, test_X_T3619, transform=transformer, classification=False)
+    test_set = GeCRISPRDataset(V520PATH, np.arange(520), transform=transformer, classification=False)
     train_set_loader = DataLoader(train_set, shuffle=True, batch_size=256)
     val_set_loader = DataLoader(val_set, shuffle=True, batch_size=256)
     if args.model == "RNN":
-        encoder = GuideHRNN(21, 32, 3360, n_classes=5).cuda()
+        encoder = GuideHRNN(20, 32, 3200, n_classes=5).cuda()
     elif args.model == "CNN":
-        encoder = GuideHN(21, 32, 1360, n_classes=5).cuda()
+        encoder = GuideHN(20, 32, 1280, n_classes=5).cuda()
     model = DKL(encoder, [1,5*32]).cuda().eval()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
@@ -139,7 +121,7 @@ if __name__ == "__main__":
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
         train_set_loader, val_set_loader, EPOCHS, 
-        scheduler, optimizer, mll, args.output, lambda a,b: float(spearmanr(a, b)[0])
+        scheduler, optimizer, mll, args.output, lambda a,b: float(pearsonr(a, b)[0])
     )
     y_hat = []
     y = []

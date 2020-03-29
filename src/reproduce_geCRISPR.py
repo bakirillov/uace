@@ -51,16 +51,6 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, median_abso
 from sklearn.metrics import accuracy_score, matthews_corrcoef, precision_score, recall_score
 
 
-def get_Cas9_transformer():
-    u = OneHotAndCut("NGG", False, False, fold=False)
-    transformer = transforms.Compose(
-        [
-            u, ToTensor(cudap=True)
-        ]
-    )
-    return(transformer)
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -101,7 +91,7 @@ if __name__ == "__main__":
     T3619PATH = config["T3619PATH"]
     V520PATH = config["V520PATH"]
     train_X_T3619, test_X_T3619, _, _ = train_test_split(
-        np.arange(3619), np.arange(3619), test_size=0.1
+        np.arange(3619), np.arange(3619), test_size=0.2
     )
     train_set = GeCRISPRDataset(T3619PATH, train_X_T3619, transform=transformer, classification=False)
     val_set = GeCRISPRDataset(T3619PATH, test_X_T3619, transform=transformer, classification=False)
@@ -109,9 +99,9 @@ if __name__ == "__main__":
     train_set_loader = DataLoader(train_set, shuffle=True, batch_size=256)
     val_set_loader = DataLoader(val_set, shuffle=True, batch_size=256)
     if args.model == "RNN":
-        encoder = GuideHRNN(20, 32, 3360, n_classes=5).cuda()
+        encoder = GuideHRNN(20, 32, 3200, n_classes=5).cuda()
     elif args.model == "CNN":
-        encoder = GuideHN(20, 32, 1360, n_classes=5).cuda()
+        encoder = GuideHN(20, 32, 1280, n_classes=5).cuda()
     model = DKL(encoder, [1,5*32]).cuda().eval()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
@@ -123,7 +113,7 @@ if __name__ == "__main__":
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
         train_set_loader, val_set_loader, EPOCHS, 
-        scheduler, optimizer, mll, args.output, lambda a,b: float(spearmanr(a, b)[0])
+        scheduler, optimizer, mll, args.output, lambda a,b: float(pearsonr(a, b)[0])
     )
     y_hat = []
     y = []

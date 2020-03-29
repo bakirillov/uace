@@ -95,7 +95,9 @@ if __name__ == "__main__":
         )
         series = data['perfect match sgRNA']
         print('series:', series.shape)
-        val_series = np.random.choice(np.unique(series), size=int(len(np.unique(series))*.20), replace=False)
+        val_series = np.random.choice(
+            np.unique(series), size=int(len(np.unique(series))*.20), replace=False
+        )
         val_indices = np.where(np.isin(series, val_series))
         train_indices = np.where(~np.isin(series, val_series))
         u = ImperfectMatchTransform("NGG", False, False, fold=False, cut_at_start=2, cut_at_end=1)
