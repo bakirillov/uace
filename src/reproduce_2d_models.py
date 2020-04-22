@@ -83,6 +83,13 @@ if __name__ == "__main__":
         help="set the seed for prng",
         default=99
     )
+    parser.add_argument(
+        "-u", "--use-mse",
+        dest="mse",
+        action="store_true", 
+        help="use mse?",
+        default=False
+    )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
@@ -124,7 +131,7 @@ if __name__ == "__main__":
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
         train_set_loader, val_set_loader, EPOCHS, 
-        scheduler, optimizer, mll, args.output, rsquared
+        scheduler, optimizer, mll, args.output, rsquared, args["mse"]
     )
     y_hat = []
     y = []

@@ -816,7 +816,7 @@ class DKL(DeepGP):
         else:
             return(output, rec)
         
-    def fit(self, train_set_loader, val_set_loader, epochs, scheduler, optimizer, mll, filename, metric):
+    def fit(self, train_set_loader, val_set_loader, epochs, scheduler, optimizer, mll, filename, metric, use_mse=False):
         training = {"mse": [], "metric": []}
         validation = {"mse": [], "metric": []}
         for a in np.arange(epochs):
@@ -834,6 +834,9 @@ class DKL(DeepGP):
                 output, reconstruction = self.forward(sequence)
                 prediction = self.likelihood(output).mean.mean(0)
                 loss = -mll(output, targets)
+                if use_mse:
+                    mse = 0.5*((self.likelihood(output).mean.mean(0)-targets)**2).mean()
+                    loss = loss + mse
                 loss.backward()
                 optimizer.step()
                 predictions = prediction.cpu().data.numpy()
