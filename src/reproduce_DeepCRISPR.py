@@ -78,7 +78,7 @@ if __name__ == "__main__":
         dest="line",
         action="store", 
         help="set the cell line for test set",
-        choices=["hela", "hek293t", "hl60"],
+        choices=["hela", "hek293t", "hl60", "hct116"],
         default="hela"
     )
     parser.add_argument(
@@ -95,21 +95,46 @@ if __name__ == "__main__":
     torch.cuda.manual_seed(int(args.seed))
     with open(args.config, "r") as ih:
         config = json.load(ih)
+    deepCRISPRPATH = config["DeepCRISPRPath"]
+    hct116 = pd.read_excel(op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 0)
+    hek293t = pd.read_excel(op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 1)
+    hela = pd.read_excel(op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 2)
+    hl60 = pd.read_excel(op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 3)
+    hl60_not_in_hct116 = np.logical_not(hl60["sgRNA"].isin(hct116["sgRNA"])).values
+    hl60_not_in_hek293t = np.logical_not(hl60["sgRNA"].isin(hek293t["sgRNA"])).values
+    hl60_not_in_hela = np.logical_not(hl60["sgRNA"].isin(hela["sgRNA"])).values
+    hela_not_in_hct116 = np.logical_not(hela["sgRNA"].isin(hct116["sgRNA"])).values
+    hela_not_in_hek293t = np.logical_not(hela["sgRNA"].isin(hek293t["sgRNA"])).values
+    hela_not_in_hl60 = np.logical_not(hela["sgRNA"].isin(hl60["sgRNA"])).values
+    hct116_not_in_hela = np.logical_not(hct116["sgRNA"].isin(hela["sgRNA"])).values
+    hct116_not_in_hek293t = np.logical_not(hct116["sgRNA"].isin(hek293t["sgRNA"])).values
+    hct116_not_in_hl60 = np.logical_not(hct116["sgRNA"].isin(hl60["sgRNA"])).values
+    hek293t_not_in_hela = np.logical_not(hek293t["sgRNA"].isin(hela["sgRNA"])).values
+    hek293t_not_in_hct116 = np.logical_not(hek293t["sgRNA"].isin(hct116["sgRNA"])).values
+    hek293t_not_in_hl60 = np.logical_not(hek293t["sgRNA"].isin(hl60["sgRNA"])).values
+    dfs = {
+        "hct116": hct116[np.logical_and(hct116_not_in_hek293t, hct116_not_in_hl60, hct116_not_in_hela)],
+        "hela": hela[np.logical_and(hela_not_in_hek293t, hela_not_in_hl60, hela_not_in_hct116)],
+        "hl60": hl60[np.logical_and(hl60_not_in_hek293t, hl60_not_in_hct116, hl60_not_in_hela)],
+        "hek293t": hek293t[np.logical_and(hek293t_not_in_hct116, hek293t_not_in_hela, hek293t_not_in_hl60)]
+    }
+    lines = list(dfs.keys())
+    current_train = dfs[args.line]
+    lines.pop(lines.index(args.line))
+    current_test = pd.concat([dfs[a] for a in lines])
     transformer = get_Cas9_transformer()
-    T3619PATH = config["T3619PATH"]
-    V520PATH = config["V520PATH"]
-    train_X_T3619, test_X_T3619, _, _ = train_test_split(
-        np.arange(3619), np.arange(3619), test_size=0.2
+    train_set = DeepHFDataset(
+        current_train, np.arange(current_train.shape[0]), transform=transformer
     )
-    train_set = GeCRISPRDataset(T3619PATH, train_X_T3619, transform=transformer, classification=False)
-    val_set = GeCRISPRDataset(T3619PATH, test_X_T3619, transform=transformer, classification=False)
-    test_set = GeCRISPRDataset(V520PATH, np.arange(520), transform=transformer, classification=False)
+    val_set = DeepHFDataset(
+        current_test, np.arange(current_test.shape[0]), transform=transformer
+    )
     train_set_loader = DataLoader(train_set, shuffle=True, batch_size=256)
     val_set_loader = DataLoader(val_set, shuffle=True, batch_size=256)
     if args.model == "RNN":
-        encoder = GuideHRNN(20, 32, 3200, n_classes=5).cuda()
+        encoder = GuideHRNN(21, 32, 3360, n_classes=5).cuda()
     elif args.model == "CNN":
-        encoder = GuideHN(20, 32, 1280, n_classes=5).cuda()
+        encoder = GuideHN(21, 32, 1360, n_classes=5).cuda()
     model = DKL(encoder, [1,5*32]).cuda().eval()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
@@ -121,7 +146,7 @@ if __name__ == "__main__":
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
         train_set_loader, val_set_loader, EPOCHS, 
-        scheduler, optimizer, mll, args.output, lambda a,b: float(pearsonr(a, b)[0])
+        scheduler, optimizer, mll, args.output, lambda a,b: float(spearmanr(a, b)[0])
     )
     y_hat = []
     y = []

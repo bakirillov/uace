@@ -816,7 +816,10 @@ class DKL(DeepGP):
         else:
             return(output, rec)
         
-    def fit(self, train_set_loader, val_set_loader, epochs, scheduler, optimizer, mll, filename, metric, use_mse=False):
+    def fit(
+            self, train_set_loader, val_set_loader, epochs, 
+            scheduler, optimizer, mll, filename, metric, use_mse=False
+        ):
         training = {"mse": [], "metric": []}
         validation = {"mse": [], "metric": []}
         for a in np.arange(epochs):
@@ -881,13 +884,15 @@ class DKL(DeepGP):
 class WeissmanDataset(Dataset):
     
     def __init__(
-        self, dataframe, indices, transform=None, genome_column="genome input", sgRNA_column="sgRNA input",
-        label_column="mean relative gamma", n_bins=5
+        self, dataframe, indices, transform=None, genome_column="genome input", 
+        sgRNA_column="sgRNA input",
+        label_column="mean relative gamma", n_bins=5, only_target=True
     ):
         self.transform = transform
         self.S = dataframe.iloc[indices]
         self.genome_column = genome_column
         self.sgRNA_column = sgRNA_column
+        self.only_target = only_target
         self.label_column = label_column
         self.n_bins = n_bins
         self.S[self.label_column] = self.S[self.label_column] + np.abs(np.min(self.S[self.label_column]))
@@ -911,7 +916,7 @@ class WeissmanDataset(Dataset):
         genome = self.S.iloc[ind][self.genome_column]
         transformed = self.transform(guide+","+genome)
         target = self.S.iloc[ind][self.label_column]
-        if self.n_bins > 0:
+        if self.n_bins > 0 and not self.only_target:
             target = np.array([target, self.sample_weights[ind]])
         return(transformed, target)
     

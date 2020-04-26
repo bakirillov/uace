@@ -9,3 +9,4 @@ src/*.pkl
 src/*.csv
 src/*.json
 models/*
+src/Untitled.ipynb

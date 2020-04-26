@@ -131,7 +131,7 @@ if __name__ == "__main__":
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
         train_set_loader, val_set_loader, EPOCHS, 
-        scheduler, optimizer, mll, args.output, rsquared, args["mse"]
+        scheduler, optimizer, mll, args.output, rsquared, args.mse
     )
     y_hat = []
     y = []
