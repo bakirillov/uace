@@ -89,6 +89,20 @@ if __name__ == "__main__":
         choices=["CNN", "RNN"],
         default="RNN"
     )
+    parser.add_argument(
+        "-u", "--use-mse",
+        dest="mse",
+        action="store_true", 
+        help="use mse?",
+        default=False
+    )
+    parser.add_argument(
+        "-v", "--validation",
+        dest="validation",
+        action="store_true", 
+        help="use leave-one-cell-line-out cross-validation?",
+        default=False
+    )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
@@ -119,16 +133,28 @@ if __name__ == "__main__":
         "hek293t": hek293t[np.logical_and(hek293t_not_in_hct116, hek293t_not_in_hela, hek293t_not_in_hl60)]
     }
     lines = list(dfs.keys())
-    current_train = dfs[args.line]
-    lines.pop(lines.index(args.line))
-    current_test = pd.concat([dfs[a] for a in lines])
-    transformer = get_Cas9_transformer()
-    train_set = DeepHFDataset(
-        current_train, np.arange(current_train.shape[0]), transform=transformer
-    )
-    val_set = DeepHFDataset(
-        current_test, np.arange(current_test.shape[0]), transform=transformer
-    )
+    transformer = get_Cas9_transformer(True)
+    if args.validation:
+        current_test = dfs[args.line]
+        lines.pop(lines.index(args.line))
+        current_train = pd.concat([dfs[a] for a in lines])
+        train_set = DeepHFDataset(
+            current_train, np.arange(current_train.shape[0]), transform=transformer
+        )
+        val_set = DeepHFDataset(
+            current_test, np.arange(current_test.shape[0]), transform=transformer
+        )
+    else:
+        current = dfs[args.line]
+        train_X, test_X, _, _ = train_test_split(
+            np.arange(current.shape[0]), np.arange(current.shape[0]), test_size=0.2
+        )
+        train_set = DeepHFDataset(
+            current, train_X, transform=transformer
+        )
+        val_set = DeepHFDataset(
+            current, test_X, transform=transformer
+        )
     train_set_loader = DataLoader(train_set, shuffle=True, batch_size=256)
     val_set_loader = DataLoader(val_set, shuffle=True, batch_size=256)
     if args.model == "RNN":
@@ -146,12 +172,12 @@ if __name__ == "__main__":
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
         train_set_loader, val_set_loader, EPOCHS, 
-        scheduler, optimizer, mll, args.output, lambda a,b: float(spearmanr(a, b)[0])
+        scheduler, optimizer, mll, args.output, lambda a,b: float(spearmanr(a, b)[0]), use_mse=args.mse
     )
     y_hat = []
     y = []
     y_hat_std = []
-    for i,b in tqdm(enumerate(test_set)):
+    for i,b in tqdm(enumerate(val_set)):
         sequence, target = b
         y.append(float(target))
         ss = sequence.shape

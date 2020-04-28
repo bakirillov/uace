@@ -51,8 +51,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, median_abso
 
 
 
-def get_Cas9_transformer():
-    u = OneHotAndCut("NGG", False, False, fold=False)
+def get_Cas9_transformer(cut_pam=False):
+    u = OneHotAndCut("NGG", False, cut_pam, fold=False)
     transformer = transforms.Compose(
         [
             u, ToTensor(cudap=True)

@@ -10,3 +10,6 @@ src/*.csv
 src/*.json
 models/*
 src/Untitled.ipynb
+results/*
+src/.~lock.total.csv#
+src/*.sh
