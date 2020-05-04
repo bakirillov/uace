@@ -30,16 +30,29 @@ if __name__ == "__main__":
     args = parser.parse_args()
     with open(args.input+".json", "r") as ih:
         data = json.load(ih)
-    CI = in_CI(data["y"], data["y_hat"], data["y_hat_std"]).mean()
-    pearson = pearsonr(data["y"], data["y_hat"])
-    spearman = spearmanr(data["y"], data["y_hat"])
-    rsq = rsquared(data["y"], data["y_hat"])
-    results = pd.DataFrame(CI).T
-    results["PCC"] = [pearson[0]]
-    results["PCC-pval"] = [pearson[1]]
-    results["SCC"] = [spearman[0]]
-    results["SCC-pval"] = [spearman[1]]
-    results["rsquared"] = [rsq]
-    outfn = op.join(args.output, args.input.replace("/", "_").replace(".", ""))
-    print(outfn)
-    results.to_csv(outfn+".csv")
+    if "Cpf1" not in args.input:
+        CI = in_CI(data["y"], data["y_hat"], data["y_hat_std"]).mean()
+        pearson = pearsonr(data["y"], data["y_hat"])
+        spearman = spearmanr(data["y"], data["y_hat"])
+        rsq = rsquared(data["y"], data["y_hat"])
+        results = pd.DataFrame(CI).T
+        results["PCC"] = [pearson[0]]
+        results["PCC-pval"] = [pearson[1]]
+        results["SCC"] = [spearman[0]]
+        results["SCC-pval"] = [spearman[1]]
+        results["rsquared"] = [rsq]
+    else:
+        for a in ["H1", "H2", "H3"]:
+            CI = in_CI(data["y_"+a], data["y_hat_"+a], data["y_hat_std_"+a]).mean()
+            pearson = pearsonr(data["y_"+a], data["y_hat_"+a])
+            spearman = spearmanr(data["y_"+a], data["y_hat_"+a])
+            rsq = rsquared(data["y_"+a], data["y_hat_"+a])
+            results = pd.DataFrame(CI).T
+            results["PCC"] = [pearson[0]]
+            results["PCC-pval"] = [pearson[1]]
+            results["SCC"] = [spearman[0]]
+            results["SCC-pval"] = [spearman[1]]
+            results["rsquared"] = [rsq]
+            outfn = op.join(args.output, args.input.replace("/", "_").replace(".", ""))
+            print(outfn)
+            results.to_csv(outfn+"_"+a+".csv")

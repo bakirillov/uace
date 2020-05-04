@@ -50,6 +50,17 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, median_abso
 
 
 
+def get_Cpf1_transformer(cut_pam=True, cut_at_start=4, cut_at_end=6):
+    u = OneHotAndCut(
+        "TTTN", True, cut_pam, fold=False, 
+        cut_at_start=cut_at_start, cut_at_end=cut_at_end
+    )
+    transformer = transforms.Compose(
+        [
+            u, ToTensor(cudap=True)
+        ]
+    )
+    return(transformer)
 
 def get_Cas9_transformer(cut_pam=False):
     u = OneHotAndCut("NGG", False, cut_pam, fold=False)
@@ -817,11 +828,11 @@ class DKL(DeepGP):
             return(output, rec)
         
     def fit(
-            self, train_set_loader, val_set_loader, epochs, 
+            self, train_set_loader, val_set_loaders, epochs, 
             scheduler, optimizer, mll, filename, metric, use_mse=False
         ):
         training = {"mse": [], "metric": []}
-        validation = {"mse": [], "metric": []}
+        validation = {i:{"mse": [], "metric": []} for i,a in enumerate(val_set_loaders)}
         for a in np.arange(epochs):
             running_targets = []
             running_preds = []
@@ -855,28 +866,31 @@ class DKL(DeepGP):
                 np.unique(np.concatenate(running_preds)).shape, str(training["metric"][-1])
             )
             self.eval()
-            running_targets = []
-            running_preds = []
-            print("Validation, epoch #"+str(a)+", "+str(len(val_set_loader)))
-            for i,b in tqdm(enumerate(val_set_loader)):
-                sequence, target = b
-                running_targets.append(target.data.numpy())
-                target = target.cuda()
-                output, _ = self.forward(sequence)
-                loss = -mll(output, target)
-                predictions = self.likelihood(output).mean.mean(0).cpu().data.numpy()
-                running_preds.append(predictions)
-            validation["mse"].append(
-                float(mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets)))
-            )
-            validation["metric"].append(
-                metric(np.concatenate(running_targets), np.concatenate(running_preds).ravel())
-            )
+            for j,val_set_loader in enumerate(val_set_loaders):
+                print("Validation, epoch #"+str(a)+", "+str(len(val_set_loader)))
+                running_targets = []
+                running_preds = []
+                for i,b in tqdm(enumerate(val_set_loader)):
+                    sequence, target = b
+                    running_targets.append(target.data.numpy())
+                    target = target.cuda()
+                    output, _ = self.forward(sequence)
+                    loss = -mll(output, target)
+                    predictions = self.likelihood(output).mean.mean(0).cpu().data.numpy()
+                    running_preds.append(predictions)
+                validation[j]["mse"].append(
+                    float(
+                        mean_squared_error(np.concatenate(running_preds), np.concatenate(running_targets))
+                    )
+                )
+                validation[j]["metric"].append(
+                    metric(np.concatenate(running_targets), np.concatenate(running_preds).ravel())
+                )
+                print(
+                    "Validation statistics: "+str(validation[j]["mse"][-1]),
+                    np.unique(np.concatenate(running_preds)).shape, str(validation[j]["metric"][-1])
+                )
             torch.save(self.state_dict(), filename+str(a)+".ptch")
-            print(
-                "Validation statistics: "+str(validation["mse"][-1]),
-                np.unique(np.concatenate(running_preds)).shape, str(validation["metric"][-1])
-            )
             scheduler.step()
         return(training, validation)
         
