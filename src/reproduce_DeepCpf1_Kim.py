@@ -174,7 +174,7 @@ if __name__ == "__main__":
     y_hat_std_H3 = []
     for i,b in tqdm(enumerate(H3_set)):
         sequence, target = b
-        y_H1.append(float(target))
+        y_H3.append(float(target))
         ss = sequence.shape
         output, _ = model.forward(sequence.reshape(1, *ss))
         predictions = model.likelihood(output).mean.mean(0).cpu().data.numpy()

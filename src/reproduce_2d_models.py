@@ -130,7 +130,7 @@ if __name__ == "__main__":
     mll = DeepApproximateMLL(VariationalELBOEmpirical(model.likelihood, model, config["batch_size"]))
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
-        train_set_loader, val_set_loader, EPOCHS, 
+        train_set_loader, [val_set_loader], EPOCHS, 
         scheduler, optimizer, mll, args.output, rsquared, args.mse
     )
     y_hat = []
