@@ -8,6 +8,8 @@ src/*.ptch
 src/*.pkl
 src/*.csv
 src/*.json
+src/*.txt
+src/*.tsv
 models/*
 src/Untitled.ipynb
 results/*
