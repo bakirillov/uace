@@ -88,6 +88,13 @@ if __name__ == "__main__":
         help="use mse?",
         default=False
     )
+    parser.add_argument(
+        "-p", "--proportion",
+        dest="proportion",
+        action="store", 
+        help="set proportion of the data (used for learning curve)",
+        default="-1"
+    )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
@@ -100,6 +107,8 @@ if __name__ == "__main__":
     train_X_T3619, test_X_T3619, _, _ = train_test_split(
         np.arange(3619), np.arange(3619), test_size=0.2
     )
+    if args.proportions != "-1":
+        train_X_T3610 = train_test_split(train_X_T3610, train_size=float(args.proportions))
     train_set = GeCRISPRDataset(T3619PATH, train_X_T3619, transform=transformer, classification=False)
     val_set = GeCRISPRDataset(T3619PATH, test_X_T3619, transform=transformer, classification=False)
     test_set = GeCRISPRDataset(V520PATH, np.arange(520), transform=transformer, classification=False)

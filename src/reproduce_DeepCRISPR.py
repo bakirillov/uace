@@ -103,6 +103,13 @@ if __name__ == "__main__":
         help="use leave-one-cell-line-out cross-validation?",
         default=False
     )
+    parser.add_argument(
+        "-p", "--proportion",
+        dest="proportion",
+        action="store", 
+        help="set proportion of the data (used for learning curve)",
+        default="-1"
+    )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
@@ -138,8 +145,13 @@ if __name__ == "__main__":
         current_test = dfs[args.line]
         lines.pop(lines.index(args.line))
         current_train = pd.concat([dfs[a] for a in lines])
+        current_train_indices = np.arange(current_train.shape[0])
+        if args.proportion != "-1":
+            current_train_indices, _ = train_test_split(
+                current_train_indices, train_size=float(args.proportion)
+            )
         train_set = DeepHFDataset(
-            current_train, np.arange(current_train.shape[0]), transform=transformer
+            current_train, current_train_indices, transform=transformer
         )
         val_set = DeepHFDataset(
             current_test, np.arange(current_test.shape[0]), transform=transformer
@@ -149,6 +161,10 @@ if __name__ == "__main__":
         train_X, test_X, _, _ = train_test_split(
             np.arange(current.shape[0]), np.arange(current.shape[0]), test_size=0.2
         )
+        if args.proportion != "-1":
+            train_X, _ = train_test_split(
+                train_X, train_size=float(args.proportion)
+            )
         train_set = DeepHFDataset(
             current, train_X, transform=transformer
         )

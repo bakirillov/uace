@@ -96,6 +96,13 @@ if __name__ == "__main__":
         help="use mse?",
         default=False
     )
+    parser.add_argument(
+        "-p", "--proportion",
+        dest="proportion",
+        action="store", 
+        help="set proportion of the data (used for learning curve)",
+        default="-1"
+    )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
@@ -117,6 +124,8 @@ if __name__ == "__main__":
     train_X, testval_X, _, _ = train_test_split(
         np.arange(data.shape[0]), np.arange(data.shape[0]), test_size=0.085+0.15
     )
+    if args.proportion != "-1":
+        train_X, _ = train_test_split(train_X, train_size=float(args.proportion))
     test_X, val_X, _, _ = train_test_split(
         testval_X, testval_X, test_size=0.085/(0.085+0.15)
     )

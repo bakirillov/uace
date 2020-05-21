@@ -90,6 +90,13 @@ if __name__ == "__main__":
         help="use mse?",
         default=False
     )
+    parser.add_argument(
+        "-p", "--proportion",
+        dest="proportion",
+        action="store", 
+        help="set proportion of the data (used for learning curve)",
+        default="-1"
+    )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
@@ -107,6 +114,8 @@ if __name__ == "__main__":
         )
         val_indices = np.where(np.isin(series, val_series))
         train_indices = np.where(~np.isin(series, val_series))
+        if args.proportion != "-1":
+            train_indices, _ = train_test_split(train_indices, train_size=float(args.proportion))
         u = ImperfectMatchTransform("NGG", False, False, fold=False, cut_at_start=2, cut_at_end=1)
         transformer = transforms.Compose(
             [
