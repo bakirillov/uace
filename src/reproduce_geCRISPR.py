@@ -46,9 +46,12 @@ from gpytorch.models.deep_gps import DeepGPLayer, DeepGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from gpytorch.kernels import ScaleKernel, RBFKernel, GridInterpolationKernel
-from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical, DeepApproximateMLL
-from sklearn.metrics import mean_absolute_error, mean_squared_error, median_absolute_error
-from sklearn.metrics import accuracy_score, matthews_corrcoef, precision_score, recall_score
+from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical
+from gpytorch.mlls import DeepApproximateMLL
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import median_absolute_error
+from sklearn.metrics import accuracy_score, matthews_corrcoef
+from sklearn.metrics import precision_score, recall_score
 
 
 if __name__ == "__main__":
@@ -56,27 +59,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c", "--config",
         dest="config",
-        action="store", 
-        help="set the config file", 
+        action="store",
+        help="set the config file",
         default="config.json"
     )
     parser.add_argument(
         "-o", "--output",
         dest="output",
-        action="store", 
+        action="store",
         help="set the path of output directory"
     )
     parser.add_argument(
         "-s", "--seed",
         dest="seed",
-        action="store", 
+        action="store",
         help="set the seed for prng",
         default=192
     )
     parser.add_argument(
         "-m", "--model",
         dest="model",
-        action="store", 
+        action="store",
         help="set the type of model",
         choices=["CNN", "RNN"],
         default="RNN"
@@ -84,14 +87,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "-u", "--use-mse",
         dest="mse",
-        action="store_true", 
+        action="store_true",
         help="use mse?",
         default=False
     )
     parser.add_argument(
         "-p", "--proportion",
         dest="proportion",
-        action="store", 
+        action="store",
         help="set proportion of the data (used for learning curve)",
         default="-1"
     )
@@ -108,46 +111,85 @@ if __name__ == "__main__":
         np.arange(3619), np.arange(3619), test_size=0.2
     )
     if args.proportions != "-1":
-        train_X_T3610 = train_test_split(train_X_T3610, train_size=float(args.proportions))
-    train_set = GeCRISPRDataset(T3619PATH, train_X_T3619, transform=transformer, classification=False)
-    val_set = GeCRISPRDataset(T3619PATH, test_X_T3619, transform=transformer, classification=False)
-    test_set = GeCRISPRDataset(V520PATH, np.arange(520), transform=transformer, classification=False)
+        train_X_T3610 = train_test_split(
+            train_X_T3610, train_size=float(args.proportions)
+        )
+    train_set = GeCRISPRDataset(
+        T3619PATH, train_X_T3619, transform=transformer, classification=False
+    )
+    val_set = GeCRISPRDataset(
+        T3619PATH, test_X_T3619, transform=transformer, classification=False
+    )
+    test_set = GeCRISPRDataset(
+        V520PATH, np.arange(520), transform=transformer, classification=False
+    )
     train_set_loader = DataLoader(train_set, shuffle=True, batch_size=256)
     val_set_loader = DataLoader(val_set, shuffle=True, batch_size=256)
     if args.model == "RNN":
         encoder = GuideHRNN(20, 32, 3200, n_classes=5).cuda()
     elif args.model == "CNN":
         encoder = GuideHN(20, 32, 1280, n_classes=5).cuda()
-    model = DKL(encoder, [1,5*32]).cuda().eval()
+    model = DKL(encoder, [1, 5*32]).cuda().eval()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
     print('X validation:', len(val_set))
     optimizer = Adam([
         {'params': model.parameters()}
     ], lr=0.01)
-    mll = DeepApproximateMLL(VariationalELBOEmpirical(model.likelihood, model, config["batch_size"]))
+    mll = DeepApproximateMLL(
+        VariationalELBOEmpirical(model.likelihood, model, config["batch_size"])
+    )
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
-        train_set_loader, [val_set_loader], EPOCHS, 
-        scheduler, optimizer, mll, args.output, lambda a,b: float(pearsonr(a, b)[0]), use_mse=args.mse
+        train_set_loader, [val_set_loader], EPOCHS,
+        scheduler, optimizer, mll, args.output,
+        lambda a, b: float(pearsonr(a, b)[0]), use_mse=args.mse
     )
+    y_hat_T = []
+    y_T = []
+    y_hat_std_T = []
+    train_set_loader2 = DataLoader(train_set, shuffle=False, batch_size=256)
+    for i, b in tqdm(enumerate(test_set_loader2)):
+        sequences, targets = b
+        y_T.extend([float(a) for a in targets.cpu().data.numpy()])
+        output, _ = model.forward(sequences)
+        predictions = model.likelihood(output).mean.mean(0).cpu().data.numpy()
+        y_hat_std_T.extend(
+            [
+                float(a) for a in model.likelihood(
+                    output
+                ).variance.mean(0).cpu().data.numpy()**0.5
+            ]
+        )
+        y_hat_T.extend(
+            [float(a) for a in predictions]
+        )
     y_hat = []
     y = []
     y_hat_std = []
-    for i,b in tqdm(enumerate(test_set)):
-        sequence, target = b
-        y.append(float(target))
-        ss = sequence.shape
-        output, _ = model.forward(sequence.reshape(1, *ss))
+    test_set_loader2 = DataLoader(test_set, shuffle=False, batch_size=256)
+    for i, b in tqdm(enumerate(test_set_loader2)):
+        sequences, targets = b
+        y.extend([float(a) for a in targets.cpu().data.numpy()])
+        output, _ = model.forward(sequences)
         predictions = model.likelihood(output).mean.mean(0).cpu().data.numpy()
-        y_hat_std.append(float(model.likelihood(output).variance.mean(0).cpu().data.numpy()[0]**0.5))
-        y_hat.append(float(predictions[0]))
+        y_hat_std.extend(
+            [
+                float(a) for a in model.likelihood(
+                    output
+                ).variance.mean(0).cpu().data.numpy()**0.5
+            ]
+        )
+        y_hat.extend(
+            [float(a) for a in predictions]
+        )
     with open(args.output+".json", "w") as oh:
         oh.write(
             json.dumps(
                 {
-                    "training": training, "validation": validation, 
-                    "y": y, "y_hat": y_hat, "y_hat_std": y_hat_std
+                    "training": training, "validation": validation,
+                    "y": y, "y_hat": y_hat, "y_hat_std": y_hat_std,
+                    "y_T": y_T, "y_hat_T": y_hat_T, "y_hat_std_T": y_hat_std_T
                 }
             )
         )

@@ -45,10 +45,14 @@ from gpytorch.distributions import MultivariateNormal
 from gpytorch.models.deep_gps import DeepGPLayer, DeepGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from sklearn.model_selection import train_test_split, StratifiedKFold
-from gpytorch.kernels import ScaleKernel, RBFKernel, GridInterpolationKernel
-from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical, DeepApproximateMLL
-from sklearn.metrics import mean_absolute_error, mean_squared_error, median_absolute_error
-from sklearn.metrics import accuracy_score, matthews_corrcoef, precision_score, recall_score
+from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.kernels import GridInterpolationKernel
+from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical
+from gpytorch.mlls import DeepApproximateMLL
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import median_absolute_error
+from sklearn.metrics import accuracy_score, matthews_corrcoef
+from sklearn.metrics import precision_score, recall_score
 
 
 if __name__ == "__main__":
@@ -56,27 +60,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c", "--config",
         dest="config",
-        action="store", 
-        help="set the config file", 
+        action="store",
+        help="set the config file",
         default="config.json"
     )
     parser.add_argument(
         "-o", "--output",
         dest="output",
-        action="store", 
+        action="store",
         help="set the path of output directory"
     )
     parser.add_argument(
         "-s", "--seed",
         dest="seed",
-        action="store", 
+        action="store",
         help="set the seed for prng",
         default=192
     )
     parser.add_argument(
         "-l", "--line",
         dest="line",
-        action="store", 
+        action="store",
         help="set the cell line for test set",
         choices=["hela", "hek293t", "hl60", "hct116"],
         default="hela"
@@ -84,7 +88,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-m", "--model",
         dest="model",
-        action="store", 
+        action="store",
         help="set the type of model",
         choices=["CNN", "RNN"],
         default="RNN"
@@ -92,21 +96,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "-u", "--use-mse",
         dest="mse",
-        action="store_true", 
+        action="store_true",
         help="use mse?",
         default=False
     )
     parser.add_argument(
         "-v", "--validation",
         dest="validation",
-        action="store_true", 
+        action="store_true",
         help="use leave-one-cell-line-out cross-validation?",
         default=False
     )
     parser.add_argument(
         "-p", "--proportion",
         dest="proportion",
-        action="store", 
+        action="store",
         help="set proportion of the data (used for learning curve)",
         default="-1"
     )
@@ -117,27 +121,76 @@ if __name__ == "__main__":
     with open(args.config, "r") as ih:
         config = json.load(ih)
     deepCRISPRPATH = config["DeepCRISPRPath"]
-    hct116 = pd.read_excel(op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 0)
-    hek293t = pd.read_excel(op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 1)
-    hela = pd.read_excel(op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 2)
-    hl60 = pd.read_excel(op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 3)
-    hl60_not_in_hct116 = np.logical_not(hl60["sgRNA"].isin(hct116["sgRNA"])).values
-    hl60_not_in_hek293t = np.logical_not(hl60["sgRNA"].isin(hek293t["sgRNA"])).values
-    hl60_not_in_hela = np.logical_not(hl60["sgRNA"].isin(hela["sgRNA"])).values
-    hela_not_in_hct116 = np.logical_not(hela["sgRNA"].isin(hct116["sgRNA"])).values
-    hela_not_in_hek293t = np.logical_not(hela["sgRNA"].isin(hek293t["sgRNA"])).values
-    hela_not_in_hl60 = np.logical_not(hela["sgRNA"].isin(hl60["sgRNA"])).values
-    hct116_not_in_hela = np.logical_not(hct116["sgRNA"].isin(hela["sgRNA"])).values
-    hct116_not_in_hek293t = np.logical_not(hct116["sgRNA"].isin(hek293t["sgRNA"])).values
-    hct116_not_in_hl60 = np.logical_not(hct116["sgRNA"].isin(hl60["sgRNA"])).values
-    hek293t_not_in_hela = np.logical_not(hek293t["sgRNA"].isin(hela["sgRNA"])).values
-    hek293t_not_in_hct116 = np.logical_not(hek293t["sgRNA"].isin(hct116["sgRNA"])).values
-    hek293t_not_in_hl60 = np.logical_not(hek293t["sgRNA"].isin(hl60["sgRNA"])).values
+    hct116 = pd.read_excel(
+        op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 0
+    )
+    hek293t = pd.read_excel(
+        op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 1
+    )
+    hela = pd.read_excel(
+        op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 2
+    )
+    hl60 = pd.read_excel(
+        op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 3
+    )
+    hl60_not_in_hct116 = np.logical_not(
+        hl60["sgRNA"].isin(hct116["sgRNA"])
+    ).values
+    hl60_not_in_hek293t = np.logical_not(
+        hl60["sgRNA"].isin(hek293t["sgRNA"])
+    ).values
+    hl60_not_in_hela = np.logical_not(
+        hl60["sgRNA"].isin(hela["sgRNA"])
+    ).values
+    hela_not_in_hct116 = np.logical_not(
+        hela["sgRNA"].isin(hct116["sgRNA"])
+    ).values
+    hela_not_in_hek293t = np.logical_not(
+        hela["sgRNA"].isin(hek293t["sgRNA"])
+    ).values
+    hela_not_in_hl60 = np.logical_not(
+        hela["sgRNA"].isin(hl60["sgRNA"])
+    ).values
+    hct116_not_in_hela = np.logical_not(
+        hct116["sgRNA"].isin(hela["sgRNA"])
+    ).values
+    hct116_not_in_hek293t = np.logical_not(
+        hct116["sgRNA"].isin(hek293t["sgRNA"])
+    ).values
+    hct116_not_in_hl60 = np.logical_not(
+        hct116["sgRNA"].isin(hl60["sgRNA"])
+    ).values
+    hek293t_not_in_hela = np.logical_not(
+        hek293t["sgRNA"].isin(hela["sgRNA"])
+    ).values
+    hek293t_not_in_hct116 = np.logical_not(
+        hek293t["sgRNA"].isin(hct116["sgRNA"])
+    ).values
+    hek293t_not_in_hl60 = np.logical_not(
+        hek293t["sgRNA"].isin(hl60["sgRNA"])
+    ).values
     dfs = {
-        "hct116": hct116[np.logical_and(hct116_not_in_hek293t, hct116_not_in_hl60, hct116_not_in_hela)],
-        "hela": hela[np.logical_and(hela_not_in_hek293t, hela_not_in_hl60, hela_not_in_hct116)],
-        "hl60": hl60[np.logical_and(hl60_not_in_hek293t, hl60_not_in_hct116, hl60_not_in_hela)],
-        "hek293t": hek293t[np.logical_and(hek293t_not_in_hct116, hek293t_not_in_hela, hek293t_not_in_hl60)]
+        "hct116": hct116[
+            np.logical_and(
+                hct116_not_in_hek293t, hct116_not_in_hl60, hct116_not_in_hela
+            )
+        ],
+        "hela": hela[
+            np.logical_and(
+                hela_not_in_hek293t, hela_not_in_hl60, hela_not_in_hct116
+            )
+        ],
+        "hl60": hl60[
+            np.logical_and(
+                hl60_not_in_hek293t, hl60_not_in_hct116, hl60_not_in_hela
+            )
+        ],
+        "hek293t": hek293t[
+            np.logical_and(
+                hek293t_not_in_hct116, hek293t_not_in_hela,
+                hek293t_not_in_hl60
+            )
+        ]
     }
     lines = list(dfs.keys())
     transformer = get_Cas9_transformer(True)
@@ -154,12 +207,14 @@ if __name__ == "__main__":
             current_train, current_train_indices, transform=transformer
         )
         val_set = DeepHFDataset(
-            current_test, np.arange(current_test.shape[0]), transform=transformer
+            current_test, np.arange(current_test.shape[0]),
+            transform=transformer
         )
     else:
         current = dfs[args.line]
         train_X, test_X, _, _ = train_test_split(
-            np.arange(current.shape[0]), np.arange(current.shape[0]), test_size=0.2
+            np.arange(current.shape[0]),
+            np.arange(current.shape[0]), test_size=0.2
         )
         if args.proportion != "-1":
             train_X, _ = train_test_split(
@@ -177,35 +232,46 @@ if __name__ == "__main__":
         encoder = GuideHRNN(21, 32, 3360, n_classes=5).cuda()
     elif args.model == "CNN":
         encoder = GuideHN(21, 32, 1360, n_classes=5).cuda()
-    model = DKL(encoder, [1,5*32]).cuda().eval()
+    model = DKL(encoder, [1, 5*32]).cuda().eval()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
     print('X validation:', len(val_set))
     optimizer = Adam([
         {'params': model.parameters()}
     ], lr=0.01)
-    mll = DeepApproximateMLL(VariationalELBOEmpirical(model.likelihood, model, config["batch_size"]))
+    mll = DeepApproximateMLL(
+        VariationalELBOEmpirical(
+            model.likelihood, model, config["batch_size"]
+        )
+    )
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
-        train_set_loader, [val_set_loader], EPOCHS, 
-        scheduler, optimizer, mll, args.output, lambda a,b: float(spearmanr(a, b)[0]), use_mse=args.mse
+        train_set_loader, [val_set_loader], EPOCHS,
+        scheduler, optimizer, mll, args.output,
+        lambda a, b: float(spearmanr(a, b)[0]), use_mse=args.mse
     )
     y_hat = []
     y = []
     y_hat_std = []
-    for i,b in tqdm(enumerate(val_set)):
+    for i, b in tqdm(enumerate(val_set)):
         sequence, target = b
         y.append(float(target))
         ss = sequence.shape
         output, _ = model.forward(sequence.reshape(1, *ss))
         predictions = model.likelihood(output).mean.mean(0).cpu().data.numpy()
-        y_hat_std.append(float(model.likelihood(output).variance.mean(0).cpu().data.numpy()[0]**0.5))
+        y_hat_std.append(
+            float(
+                model.likelihood(
+                    output
+                ).variance.mean(0).cpu().data.numpy()[0]**0.5
+            )
+        )
         y_hat.append(float(predictions[0]))
     with open(args.output+".json", "w") as oh:
         oh.write(
             json.dumps(
                 {
-                    "training": training, "validation": validation, 
+                    "training": training, "validation": validation,
                     "y": y, "y_hat": y_hat, "y_hat_std": y_hat_std
                 }
             )

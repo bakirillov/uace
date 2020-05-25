@@ -18,13 +18,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "-i", "--input",
         dest="input",
-        action="store", 
+        action="store",
         help="set the mask of input"
     )
     parser.add_argument(
         "-o", "--output",
         dest="output",
-        action="store", 
+        action="store",
         help="set the path of output directory"
     )
     args = parser.parse_args()
@@ -43,7 +43,9 @@ if __name__ == "__main__":
         results["rsquared"] = [rsq]
     else:
         for a in ["H1", "H2", "H3"]:
-            CI = in_CI(data["y_"+a], data["y_hat_"+a], data["y_hat_std_"+a]).mean()
+            CI = in_CI(
+                data["y_"+a], data["y_hat_"+a], data["y_hat_std_"+a]
+            ).mean()
             pearson = pearsonr(data["y_"+a], data["y_hat_"+a])
             spearman = spearmanr(data["y_"+a], data["y_hat_"+a])
             rsq = rsquared(data["y_"+a], data["y_hat_"+a])
@@ -53,6 +55,8 @@ if __name__ == "__main__":
             results["SCC"] = [spearman[0]]
             results["SCC-pval"] = [spearman[1]]
             results["rsquared"] = [rsq]
-            outfn = op.join(args.output, args.input.replace("/", "_").replace(".", ""))
+            outfn = op.join(
+                args.output, args.input.replace("/", "_").replace(".", "")
+            )
             print(outfn)
             results.to_csv(outfn+"_"+a+".csv")

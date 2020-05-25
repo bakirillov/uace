@@ -46,9 +46,12 @@ from gpytorch.models.deep_gps import DeepGPLayer, DeepGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from gpytorch.kernels import ScaleKernel, RBFKernel, GridInterpolationKernel
-from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical, DeepApproximateMLL
-from sklearn.metrics import mean_absolute_error, mean_squared_error, median_absolute_error
-from sklearn.metrics import accuracy_score, matthews_corrcoef, precision_score, recall_score
+from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical
+from gpytorch.mlls import DeepApproximateMLL
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import median_absolute_error
+from sklearn.metrics import accuracy_score, matthews_corrcoef
+from sklearn.metrics import precision_score, recall_score
 
 
 if __name__ == "__main__":
@@ -56,27 +59,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c", "--config",
         dest="config",
-        action="store", 
-        help="set the config file", 
+        action="store",
+        help="set the config file",
         default="config.json"
     )
     parser.add_argument(
         "-o", "--output",
         dest="output",
-        action="store", 
+        action="store",
         help="set the path of output directory"
     )
     parser.add_argument(
         "-s", "--seed",
         dest="seed",
-        action="store", 
+        action="store",
         help="set the seed for prng",
         default=192
     )
     parser.add_argument(
         "-m", "--model",
         dest="model",
-        action="store", 
+        action="store",
         help="set the type of model",
         choices=["CNN", "RNN"],
         default="RNN"
@@ -84,9 +87,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "-u", "--use-mse",
         dest="mse",
-        action="store_true", 
+        action="store_true",
         help="use mse?",
         default=False
+    )
+    parser.add_argument(
+        "-p", "--proportion",
+        dest="proportion",
+        action="store",
+        help="set proportion of the data (used for learning curve)",
+        default="-1"
     )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
@@ -95,23 +105,38 @@ if __name__ == "__main__":
     with open(args.config, "r") as ih:
         config = json.load(ih)
     deepCpf1PATH = config["DeepCpf1KimPath"]
-    train = pd.read_excel(op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=0, header=1)
-    H1 = pd.read_excel(op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=1, header=1)
-    H2 = pd.read_excel(op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=2, header=1)
-    H3 = pd.read_excel(op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=3, header=1)
+    train = pd.read_excel(
+        op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=0, header=1
+    )
+    H1 = pd.read_excel(
+        op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=1, header=1
+    )
+    H2 = pd.read_excel(
+        op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=2, header=1
+    )
+    H3 = pd.read_excel(
+        op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=3, header=1
+    )
     train = train.iloc[np.arange(train.shape[0]-2)][:]
     H1 = H1.iloc[np.arange(H1.shape[0]-2)][:]
     H2 = H2.iloc[np.arange(H2.shape[0]-2)][:]
     H3 = H3.iloc[np.arange(H3.shape[0]-2)][:]
-    train["label"] = train[train.columns[-1]].apply(lambda x: x/100 if x > 0 else 0)
+    train["label"] = train[train.columns[-1]].apply(
+        lambda x: x/100 if x > 0 else 0
+    )
     H1["label"] = H1[H1.columns[-1]].apply(lambda x: x/100 if x > 0 else 0)
     H2["label"] = H2[H2.columns[-1]].apply(lambda x: x/100 if x > 0 else 0)
     H3["label"] = H3[H3.columns[-1]].apply(lambda x: x/100 if x > 0 else 0)
     transformer = get_Cpf1_transformer()
-    train_set = DeepHFDataset(
-        train, np.arange(train.shape[0]), transform=transformer,
-            sequence_column=train.columns[1], label_column="label"
+    train_indices = np.arange(train.shape[0])
+    if args.proportion != "-1":
+        train_indices, _ = train_test_split(
+            train_indices, train_size=float(args.proportion)
         )
+    train_set = DeepHFDataset(
+        train, train_indices, transform=transformer,
+        sequence_column=train.columns[1], label_column="label"
+    )
     H1_set = DeepHFDataset(
         H1, np.arange(H1.shape[0]), transform=transformer,
         sequence_column=H1.columns[1], label_column="label"
@@ -132,7 +157,7 @@ if __name__ == "__main__":
         encoder = GuideHRNN(21, 32, 3360, n_classes=5).cuda()
     elif args.model == "CNN":
         encoder = GuideHN(21, 32, 1360, n_classes=5).cuda()
-    model = DKL(encoder, [1,5*32]).cuda().eval()
+    model = DKL(encoder, [1, 5*32]).cuda().eval()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
     print('X H1:', len(H1_set))
@@ -141,53 +166,104 @@ if __name__ == "__main__":
     optimizer = Adam([
         {'params': model.parameters()}
     ], lr=0.01)
-    mll = DeepApproximateMLL(VariationalELBOEmpirical(model.likelihood, model, config["batch_size"]))
+    mll = DeepApproximateMLL(
+        VariationalELBOEmpirical(model.likelihood, model, config["batch_size"])
+    )
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
-        train_set_loader, [H1_loader, H2_loader, H3_loader], EPOCHS, 
-        scheduler, optimizer, mll, args.output, lambda a,b: float(spearmanr(a, b)[0]), use_mse=args.mse
+        train_set_loader, [H1_loader, H2_loader, H3_loader], EPOCHS,
+        scheduler, optimizer, mll, args.output,
+        lambda a, b: float(spearmanr(a, b)[0]), use_mse=args.mse
     )
+    y_hat_T = []
+    y_T = []
+    y_hat_std_T = []
+    train_set_loader2 = DataLoader(train_set, shuffle=False, batch_size=256)
+    for i, b in tqdm(enumerate(train_set_loader2)):
+        sequences, targets = b
+        y_T.extend([float(a) for a in targets.cpu().data.numpy()])
+        output, _ = model.forward(sequences)
+        predictions = model.likelihood(output).mean.mean(0).cpu().data.numpy()
+        y_hat_std_T.extend(
+            [
+                float(a) for a in model.likelihood(
+                    output
+                ).variance.mean(0).cpu().data.numpy()**0.5
+            ]
+        )
+        y_hat_T.extend(
+            [float(a) for a in predictions]
+        )
     y_hat_H1 = []
     y_H1 = []
     y_hat_std_H1 = []
-    for i,b in tqdm(enumerate(H1_set)):
-        sequence, target = b
-        y_H1.append(float(target))
-        ss = sequence.shape
-        output, _ = model.forward(sequence.reshape(1, *ss))
+    H1_loader2 = DataLoader(H1_set, shuffle=False, batch_size=256)
+    for i, b in tqdm(enumerate(H1_loader2)):
+        sequences, targets = b
+        y_H1.extend([float(a) for a in targets.cpu().data.numpy()])
+        output, _ = model.forward(sequences)
         predictions = model.likelihood(output).mean.mean(0).cpu().data.numpy()
-        y_hat_std_H1.append(float(model.likelihood(output).variance.mean(0).cpu().data.numpy()[0]**0.5))
-        y_hat_H1.append(float(predictions[0]))
+        y_hat_std_H1.extend(
+            [
+                float(a) for a in model.likelihood(
+                    output
+                ).variance.mean(0).cpu().data.numpy()**0.5
+            ]
+        )
+        y_hat_H1.extend(
+            [float(a) for a in predictions]
+        )
     y_hat_H2 = []
     y_H2 = []
     y_hat_std_H2 = []
-    for i,b in tqdm(enumerate(H2_set)):
-        sequence, target = b
-        y_H2.append(float(target))
-        ss = sequence.shape
-        output, _ = model.forward(sequence.reshape(1, *ss))
+    H2_loader2 = DataLoader(H2_set, shuffle=False, batch_size=256)
+    for i, b in tqdm(enumerate(H2_loader2)):
+        sequences, targets = b
+        y_H2.extend([float(a) for a in targets.cpu().data.numpy()])
+        output, _ = model.forward(sequences)
         predictions = model.likelihood(output).mean.mean(0).cpu().data.numpy()
-        y_hat_std_H2.append(float(model.likelihood(output).variance.mean(0).cpu().data.numpy()[0]**0.5))
-        y_hat_H2.append(float(predictions[0]))
+        y_hat_std_H2.extend(
+            [
+                float(a) for a in model.likelihood(
+                    output
+                ).variance.mean(0).cpu().data.numpy()**0.5
+            ]
+        )
+        y_hat_H2.extend(
+            [float(a) for a in predictions]
+        )
     y_hat_H3 = []
     y_H3 = []
     y_hat_std_H3 = []
-    for i,b in tqdm(enumerate(H3_set)):
-        sequence, target = b
-        y_H3.append(float(target))
-        ss = sequence.shape
-        output, _ = model.forward(sequence.reshape(1, *ss))
+    H3_loader2 = DataLoader(H3_set, shuffle=False, batch_size=256)
+    for i, b in tqdm(enumerate(H3_loader2)):
+        sequences, targets = b
+        y_H3.extend([float(a) for a in targets.cpu().data.numpy()])
+        output, _ = model.forward(sequences)
         predictions = model.likelihood(output).mean.mean(0).cpu().data.numpy()
-        y_hat_std_H3.append(float(model.likelihood(output).variance.mean(0).cpu().data.numpy()[0]**0.5))
-        y_hat_H3.append(float(predictions[0]))
+        y_hat_std_H3.extend(
+            [
+                float(a) for a in model.likelihood(
+                    output
+                ).variance.mean(0).cpu().data.numpy()**0.5
+            ]
+        )
+        y_hat_H3.extend(
+            [float(a) for a in predictions]
+        )
     with open(args.output+".json", "w") as oh:
         oh.write(
             json.dumps(
                 {
-                    "training": training, "validation": validation, 
-                    "y_H1": y_H1, "y_hat_H1": y_hat_H1, "y_hat_std_H1": y_hat_std_H1,
-                    "y_H2": y_H2, "y_hat_H2": y_hat_H2, "y_hat_std_H2": y_hat_std_H2,
-                    "y_H3": y_H3, "y_hat_H3": y_hat_H3, "y_hat_std_H3": y_hat_std_H3
+                    "training": training, "validation": validation,
+                    "y_T": y_T, "y_hat_T": y_hat_T,
+                    "y_hat_std_T": y_hat_std_T,
+                    "y_H1": y_H1, "y_hat_H1": y_hat_H1,
+                    "y_hat_std_H1": y_hat_std_H1,
+                    "y_H2": y_H2, "y_hat_H2": y_hat_H2,
+                    "y_hat_std_H2": y_hat_std_H2,
+                    "y_H3": y_H3, "y_hat_H3": y_hat_H3,
+                    "y_hat_std_H3": y_hat_std_H3
                 }
             )
         )
