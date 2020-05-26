@@ -106,7 +106,48 @@ if __name__ == "__main__":
     torch.cuda.manual_seed(int(args.seed))
     with open(args.config, "r") as ih:
         config = json.load(ih)
-    if args.dataset == "Weissman":
+    if args.dataset == "Cpf1":
+        data = pd.read_excel(
+            config["Cpf1OfftargetPath"]
+        )
+        all_indices = np.arange(data.shape[0])
+        train_X, test_X = train_test_split(all_indices, test_size=0.1)
+        if args.proportion != "-1":
+            print(train_X.shape, args.proportion)
+            train_X, _ = train_test_split(
+                train_X, train_size=float(args.proportion)
+            )
+        u = ImperfectMatchTransform(
+            "TTTN", True, False, fold=False, cut_at_start=0, cut_at_end=0
+        )
+        transformer = transforms.Compose(
+            [
+                u, ToTensor(cudap=True)
+            ]
+        )
+        data[data.columns[-1]] = data[data.columns[-1]]/100
+        train_set = WeissmanDataset(
+            data, train_X, transformer,# n_bins=0, 
+            genome_column=data.columns[-2],
+            sgRNA_column=data.columns[0],
+            label_column=data.columns[-1],
+        )
+        val_set = WeissmanDataset(
+            data, test_X, transformer, n_bins=0, genome_column=data.columns[-2],
+            sgRNA_column=data.columns[0],
+            label_column=data.columns[-1],
+        )
+        train_set_loader = DataLoader(
+            train_set, shuffle=True, batch_size=8
+        )
+        val_set_loader = DataLoader(
+            val_set, shuffle=True, batch_size=8
+        )
+        encoder = GuideHN2d(
+            23, capsule_dimension=32, n_routes=1600, n_classes=5, n_channels=2,
+        ).cuda()
+        model = DKL(encoder, [1, 5*32]).cuda().eval()
+    elif args.dataset == "Weissman":
         data = pd.read_table(
             config["WeissmanDatasetPath"], index_col=0
         )
@@ -119,8 +160,9 @@ if __name__ == "__main__":
         val_indices = np.where(np.isin(series, val_series))
         train_indices = np.where(~np.isin(series, val_series))
         if args.proportion != "-1":
+            print(train_indices[0].shape, args.proportion)
             train_indices, _ = train_test_split(
-                train_indices, train_size=float(args.proportion)
+                train_indices[0], train_size=float(args.proportion)
             )
         u = ImperfectMatchTransform(
             "NGG", False, False, fold=False, cut_at_start=2, cut_at_end=1
@@ -159,20 +201,24 @@ if __name__ == "__main__":
     y_hat = []
     y = []
     y_hat_std = []
-    for i, b in tqdm(enumerate(val_set)):
-        sequence, target = b
-        y.append(float(target))
-        ss = sequence.shape
-        output, _ = model.forward(sequence.reshape(1, *ss))
-        predictions = model.likelihood(output).mean.mean(0).cpu().data.numpy()
-        y_hat_std.append(
-            float(
-                model.likelihood(
+    val_set_loader2 = DataLoader(val_set, shuffle=False, batch_size=256)
+    for i, b in tqdm(enumerate(val_set_loader2)):
+        sequences, targets = b
+        y.extend([float(a) for a in targets.cpu().data.numpy()])
+        output, _ = model.forward(sequences)
+        predictions = model.likelihood(
+            output
+        ).mean.mean(0).cpu().data.numpy()
+        y_hat_std.extend(
+            [
+                float(a) for a in model.likelihood(
                     output
-                ).variance.mean(0).cpu().data.numpy()[0]**0.5
-            )
+                ).variance.mean(0).cpu().data.numpy()**0.5
+            ]
         )
-        y_hat.append(float(predictions[0]))
+        y_hat.extend(
+            [float(a) for a in predictions]
+        )
     with open(args.output+".json", "w") as oh:
         oh.write(
             json.dumps(
