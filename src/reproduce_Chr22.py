@@ -108,7 +108,15 @@ if __name__ == "__main__":
         choices=["CNN", "RNN", "2D-CNN"],
         default="RNN"
     )
+    parser.add_argument(
+        "-t", "--total_length",
+        dest="total_length",
+        action="store",
+        help="filter targets that are shorter than total length",
+        default=None
+    )
     args = parser.parse_args()
+    print(args.architecture)
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
     torch.cuda.manual_seed(int(args.seed))
@@ -138,7 +146,14 @@ if __name__ == "__main__":
         transformer = get_Cpf1_transformer(
             args.architecture != "2D-CNN", 0, 0
         )
-        TEMPLATE = "INTERMEDIATE/chr22_genes/GENE\nTTTNNNNNNNNNNNNNNNNNNNNN\nTTTNNNNNNNNNNNNNNNNNNNNN 0\n"
+        print(args.architecture != "2D-CNN")
+        if args.architecture != "2D-CNN":
+            TEMPLATE = "INTERMEDIATE/chr22_genes/GENE\nTTTNNNNNNNNNNNNNNNNNNNNN\nTTTNNNNNNNNNNNNNNNNNNNNN 0\n"
+        else:
+            transformer = get_Cpf1_transformer(
+                False, 4, 0
+            )
+            TEMPLATE = "INTERMEDIATE/chr22_genes/GENE\nTTTNNNNNNNNNNNNNNNNNNNNNNNN\nTTTNNNNNNNNNNNNNNNNNNNNNNNN 0\n"
     chr22 = SeqIO.parse(config["Chr22_genome"], "fasta")
     chr22 = [a for a in chr22][0]
     COMMAND = "CASOFFINDER_PATH CONFIG G OUTPUT"
@@ -203,10 +218,19 @@ if __name__ == "__main__":
             print(E)
             nothing.append(a)
         else:
-            current_df = current_df[
-                current_df[3].apply(lambda x: len(x) == GLEN)
-            ]
+            #print("tl", args.total_length)
+            #print(current_df.shape, len(current_df[3][0]))
+            if not args.total_length:
+                current_df = current_df[
+                    current_df[3].apply(lambda x: len(x) == GLEN)
+                ]
+            else:
+                current_df = current_df[
+                    current_df[3].apply(lambda x: len(x) == int(args.total_length))
+                ]
             current_df[6] = [a]*current_df.shape[0]
+            #print(current_df.shape)
+            #input()
             tds = DeepHFDataset(
                 current_df, np.arange(current_df.shape[0]),
                 transformer, sequence_column=3,
@@ -216,11 +240,13 @@ if __name__ == "__main__":
             oa = []
             va = []
             for transformed_batch, _ in tqdm(tld):
+                #print(transformed_batch.shape)
                 if args.architecture == "2D-CNN":
                     transformed_batch = torch.stack(
                         [transformed_batch, transformed_batch]
                     )
                     transformed_batch = transformed_batch.permute(1, 0, 2, 3)
+                #print(transformed_batch.shape)
                 tb = model(transformed_batch)
                 o = model.likelihood(tb[0]).mean.mean(0).cpu().data.numpy()
                 v = model.likelihood(tb[0]).variance.mean(0).cpu().data.numpy()
@@ -248,7 +274,7 @@ if __name__ == "__main__":
                 total = current_df.head(int(args.number))
             else:
                 total = total.append(current_df.head(int(args.number)))
-    print("No gRNAs", nothing)
+    print("No gRNAs", len(nothing))
     with open(op.join(args.output, "nothing.txt"), "w") as oh:
         for a in nothing:
             oh.write(a+"\n")

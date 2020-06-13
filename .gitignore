@@ -10,6 +10,7 @@ src/*.csv
 src/*.json
 src/*.txt
 src/*.tsv
+src/*.npy
 models/*
 src/Untitled.ipynb
 results/*
