@@ -11,7 +11,12 @@ src/*.json
 src/*.txt
 src/*.tsv
 src/*.npy
+src/*.png
+src/test_explanations/*
+src/logos/*
+src/*.fa
 models/*
+paper/*
 src/Untitled.ipynb
 results/*
 src/.~lock.total.csv#

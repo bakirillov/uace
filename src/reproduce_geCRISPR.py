@@ -27,7 +27,6 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from capsules.capsules import *
 from IPython.display import Image
-from qhoptim.pyt import QHM, QHAdam
 from matplotlib.lines import Line2D
 from torch.autograd import Variable
 from matplotlib.patches import Patch
@@ -36,7 +35,6 @@ from torch.optim.lr_scheduler import StepLR
 from scipy.stats import spearmanr, pearsonr
 from gpytorch.priors import SmoothedBoxPrior
 from torch.utils.data import DataLoader, Dataset
-from catboost import CatBoostRegressor, Pool, cv
 from gpytorch.models import ApproximateGP, ExactGP
 from gpytorch.means import ConstantMean, LinearMean
 from gpytorch.likelihoods import GaussianLikelihood
@@ -102,18 +100,24 @@ if __name__ == "__main__":
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
     torch.cuda.manual_seed(int(args.seed))
+    if not op.exists(op.split(args.output)[0]):
+        os.makedirs(op.split(args.output)[0])
     with open(args.config, "r") as ih:
         config = json.load(ih)
     transformer = get_Cas9_transformer()
     T3619PATH = config["T3619PATH"]
     V520PATH = config["V520PATH"]
+    if not op.exists(op.split(args.output)[0]):
+        os.makedirs(op.split(args.output)[0])
     train_X_T3619, test_X_T3619, _, _ = train_test_split(
         np.arange(3619), np.arange(3619), test_size=0.2
     )
-    if args.proportions != "-1":
-        train_X_T3610 = train_test_split(
-            train_X_T3610, train_size=float(args.proportions)
-        )
+    print(train_X_T3619)
+    if args.proportion != "-1":
+        train_X_T3619 = train_test_split(
+            train_X_T3619, train_size=float(args.proportion)
+        )[0]
+        print(train_X_T3619)
     train_set = GeCRISPRDataset(
         T3619PATH, train_X_T3619, transform=transformer, classification=False
     )
@@ -149,7 +153,7 @@ if __name__ == "__main__":
     y_T = []
     y_hat_std_T = []
     train_set_loader2 = DataLoader(train_set, shuffle=False, batch_size=256)
-    for i, b in tqdm(enumerate(test_set_loader2)):
+    for i, b in tqdm(enumerate(train_set_loader2)):
         sequences, targets = b
         y_T.extend([float(a) for a in targets.cpu().data.numpy()])
         output, _ = model.forward(sequences)

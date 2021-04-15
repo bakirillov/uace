@@ -11,6 +11,7 @@ import re
 import os
 import math
 import torch
+import joblib
 import gpytorch
 import itertools
 import numpy as np
@@ -29,11 +30,10 @@ from CoordConv.coordconv import *
 from IPython.display import Image
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
-from sklearn.externals import joblib
 from sklearn.metrics import accuracy_score
 from torchvision import models, transforms
 from scipy.stats import pearsonr, spearmanr
-from gpytorch.priors import SmoothedBoxPrior
+from gpytorch.priors import SmoothedBoxPrior, NormalPrior
 from torch.utils.data import DataLoader, Dataset
 from gpytorch.models import ApproximateGP, ExactGP
 from gpytorch.means import ConstantMean, LinearMean
@@ -44,12 +44,13 @@ from Bio.SeqFeature import SeqFeature, FeatureLocation
 from gpytorch.models.deep_gps import DeepGPLayer, DeepGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from sklearn.model_selection import train_test_split, StratifiedKFold
-from gpytorch.kernels import ScaleKernel, RBFKernel, GridInterpolationKernel
-from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical
+from gpytorch.kernels import ScaleKernel, RBFKernel, GridInterpolationKernel, Kernel
+from gpytorch.mlls import VariationalELBO, VariationalELBOEmpirical, GammaRobustVariationalELBO
 from gpytorch.mlls import DeepApproximateMLL
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.metrics import median_absolute_error
-
+from math import exp, pi
+from gpytorch import constraints
 
 
 def get_Cpf1_transformer(cut_pam=True, cut_at_start=4, cut_at_end=6):
@@ -775,8 +776,7 @@ class OfftargetHOM(nn.Module):
             masked_internal.reshape(masked_internal.shape[0], -1)
         )
         return(internal, lengths, reconstructions)
-
-
+    
 class GaussianProcessLayer(DeepGPLayer):
 
     def __init__(
@@ -806,10 +806,17 @@ class GaussianProcessLayer(DeepGPLayer):
             self.mean_module = ConstantMean(batch_shape=batch_shape)
         else:
             self.mean_module = LinearMean(input_dims)
-        self.covar_module = ScaleKernel(
-            RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims),
-            batch_shape=batch_shape, ard_num_dims=None
-        )
+        if mean_type == "constant":
+            self.covar_module = ScaleKernel(
+                RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims),
+                batch_shape=batch_shape, ard_num_dims=None
+            )
+        else:
+            self.covar_module = ScaleKernel(
+                RBFKernel(batch_shape=batch_shape, ard_num_dims=input_dims),
+                batch_shape=batch_shape, ard_num_dims=None,
+                outputscale_constraint=constraints.Interval(0,1)
+            )
 
     def forward(self, x):
         mean = self.mean_module(x)
@@ -835,7 +842,10 @@ class DKL(DeepGP):
         self.FE = encoder
         self.hidden_layer = hidden_layer
         self.last_layer = last_layer
-        self.likelihood = GaussianLikelihood()
+        self.likelihood = GaussianLikelihood(
+            noise_prior=NormalPrior(0, 0.1),
+            noise_constraints=constraints.Positive()
+        )#GaussianLikelihood()
         self.return_encoded = False
 
     def forward(self, x):
@@ -911,6 +921,7 @@ class DKL(DeepGP):
                 )
                 running_targets = []
                 running_preds = []
+                running_stds = []
                 for i, b in tqdm(enumerate(val_set_loader)):
                     sequence, target = b
                     running_targets.append(target.data.numpy())
@@ -920,7 +931,11 @@ class DKL(DeepGP):
                     predictions = self.likelihood(
                         output
                     ).mean.mean(0).cpu().data.numpy()
+                    stds = self.likelihood(
+                        output
+                    ).variance.mean(0).cpu().data.numpy()**0.5
                     running_preds.append(predictions)
+                    running_stds.append(stds)
                 validation[j]["mse"].append(
                     float(
                         mean_squared_error(
@@ -945,7 +960,7 @@ class DKL(DeepGP):
         return(training, validation)
 
 
-class WeissmanDataset(Dataset):
+class JostEtAlDataset(Dataset):
 
     def __init__(
         self, dataframe, indices, transform=None, genome_column="genome input",
@@ -1023,8 +1038,7 @@ class ImperfectMatchTransform():
             f_oh = correct_order(
                 onehot(fold), k=3
             ).reshape(3, len(sequence))
-            # energy = np.repeat(energy, 4+3).reshape(7,1)
-            s_oh = np.concatenate([s_oh, f_oh])  # , energy], 1)
+            s_oh = np.concatenate([s_oh, f_oh])
         return(s_oh)
 
     def __call__(self, x):

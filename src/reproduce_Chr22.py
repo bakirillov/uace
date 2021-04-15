@@ -26,12 +26,10 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from capsules.capsules import *
 from IPython.display import Image
-from qhoptim.pyt import QHM, QHAdam
 from matplotlib.lines import Line2D
 from torch.autograd import Variable
 from matplotlib.patches import Patch
 from scipy.stats import spearmanr, pearsonr
-from catboost import CatBoostRegressor, Pool, cv
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.metrics import median_absolute_error

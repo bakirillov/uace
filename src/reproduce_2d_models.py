@@ -26,7 +26,6 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from capsules.capsules import *
 from IPython.display import Image
-from qhoptim.pyt import QHM, QHAdam
 from matplotlib.lines import Line2D
 from torch.autograd import Variable
 from matplotlib.patches import Patch
@@ -35,7 +34,6 @@ from torch.optim.lr_scheduler import StepLR
 from scipy.stats import spearmanr, pearsonr
 from gpytorch.priors import SmoothedBoxPrior
 from torch.utils.data import DataLoader, Dataset
-from catboost import CatBoostRegressor, Pool, cv
 from gpytorch.models import ApproximateGP, ExactGP
 from gpytorch.means import ConstantMean, LinearMean
 from gpytorch.likelihoods import GaussianLikelihood
@@ -70,8 +68,8 @@ if __name__ == "__main__":
         dest="dataset",
         action="store",
         help="set the dataset",
-        choices=["Weissman", "Cpf1"],
-        default="Weissman"
+        choices=["Cas9", "Cpf1"],
+        default="Cas9"
     )
     parser.add_argument(
         "-o", "--output",
@@ -104,12 +102,14 @@ if __name__ == "__main__":
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
     torch.cuda.manual_seed(int(args.seed))
+    if not op.exists(op.split(args.output)[0]):
+        os.makedirs(op.split(args.output)[0])
     with open(args.config, "r") as ih:
         config = json.load(ih)
     if args.dataset == "Cpf1":
         data = pd.read_excel(
             config["Cpf1OfftargetPath"]
-        )
+        ).dropna()
         all_indices = np.arange(data.shape[0])
         train_X, test_X = train_test_split(all_indices, test_size=0.1)
         if args.proportion != "-1":
@@ -126,16 +126,21 @@ if __name__ == "__main__":
             ]
         )
         data[data.columns[-1]] = data[data.columns[-1]]/100
-        train_set = WeissmanDataset(
+        train_set = JostEtAlDataset(
             data, train_X, transformer,# n_bins=0, 
-            genome_column=data.columns[-2],
-            sgRNA_column=data.columns[0],
-            label_column=data.columns[-1],
+            genome_column="Target sequence (5' to 3')",
+            sgRNA_column="Guide sequence (5' to 3')",
+            label_column="Indel frequency (%)",
         )
-        val_set = WeissmanDataset(
-            data, test_X, transformer, n_bins=0, genome_column=data.columns[-2],
-            sgRNA_column=data.columns[0],
-            label_column=data.columns[-1],
+        #print(data.iloc[train_X].iloc[592])
+        #for i,b in enumerate(train_set):
+        #    print(i, b)
+        #print(train_set[592])
+        val_set = JostEtAlDataset(
+            data, test_X, transformer, 
+            genome_column="Target sequence (5' to 3')",
+            sgRNA_column="Guide sequence (5' to 3')",
+            label_column="Indel frequency (%)",
         )
         train_set_loader = DataLoader(
             train_set, shuffle=True, batch_size=8
@@ -147,9 +152,9 @@ if __name__ == "__main__":
             23, capsule_dimension=32, n_routes=1600, n_classes=5, n_channels=2,
         ).cuda()
         model = DKL(encoder, [1, 5*32]).cuda().eval()
-    elif args.dataset == "Weissman":
+    elif args.dataset == "Cas9":
         data = pd.read_table(
-            config["WeissmanDatasetPath"], index_col=0
+            config["JostEtAlDatasetPath"], index_col=0
         )
         series = data['perfect match sgRNA']
         print('series:', series.shape)
@@ -172,8 +177,8 @@ if __name__ == "__main__":
                 u, ToTensor(cudap=True)
             ]
         )
-        train_set = WeissmanDataset(data, train_indices, transformer)
-        val_set = WeissmanDataset(data, val_indices, transformer, n_bins=0)
+        train_set = JostEtAlDataset(data, train_indices, transformer)
+        val_set = JostEtAlDataset(data, val_indices, transformer, n_bins=0)
         train_set_loader = DataLoader(
             train_set, shuffle=True, batch_size=config["batch_size"]
         )
@@ -219,12 +224,34 @@ if __name__ == "__main__":
         y_hat.extend(
             [float(a) for a in predictions]
         )
+    y_hat_train = []
+    y_train = []
+    y_hat_std_train = []
+    train_set_loader2 = DataLoader(train_set, shuffle=False, batch_size=256)
+    for i, b in tqdm(enumerate(train_set_loader2)):
+        sequences, targets = b
+        y_train.extend([float(a) for a in targets.cpu().data.numpy()])
+        output, _ = model.forward(sequences)
+        predictions = model.likelihood(
+            output
+        ).mean.mean(0).cpu().data.numpy()
+        y_hat_std_train.extend(
+            [
+                float(a) for a in model.likelihood(
+                    output
+                ).variance.mean(0).cpu().data.numpy()**0.5
+            ]
+        )
+        y_hat_train.extend(
+            [float(a) for a in predictions]
+        )
     with open(args.output+".json", "w") as oh:
         oh.write(
             json.dumps(
                 {
                     "training": training, "validation": validation, "y": y,
-                    "y_hat": y_hat, "y_hat_std": y_hat_std
+                    "y_hat": y_hat, "y_hat_std": y_hat_std, "y_train": y_train,
+                    "y_hat_train": y_hat_train, "y_hat_std_train": y_hat_std_train, 
                 }
             )
         )

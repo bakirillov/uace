@@ -27,7 +27,6 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from capsules.capsules import *
 from IPython.display import Image
-from qhoptim.pyt import QHM, QHAdam
 from matplotlib.lines import Line2D
 from torch.autograd import Variable
 from matplotlib.patches import Patch
@@ -36,7 +35,6 @@ from torch.optim.lr_scheduler import StepLR
 from scipy.stats import spearmanr, pearsonr
 from gpytorch.priors import SmoothedBoxPrior
 from torch.utils.data import DataLoader, Dataset
-from catboost import CatBoostRegressor, Pool, cv
 from gpytorch.models import ApproximateGP, ExactGP
 from gpytorch.means import ConstantMean, LinearMean
 from gpytorch.likelihoods import GaussianLikelihood
@@ -118,6 +116,8 @@ if __name__ == "__main__":
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
     torch.cuda.manual_seed(int(args.seed))
+    if not op.exists(op.split(args.output)[0]):
+        os.makedirs(op.split(args.output)[0])
     with open(args.config, "r") as ih:
         config = json.load(ih)
     deepCRISPRPATH = config["DeepCRISPRPath"]
@@ -234,6 +234,8 @@ if __name__ == "__main__":
         encoder = GuideHN(21, 32, 1360, n_classes=5).cuda()
     model = DKL(encoder, [1, 5*32]).cuda().eval()
     EPOCHS = config["epochs"]
+    if not op.exists(args.output):
+        os.makedirs(args.output)
     print('X train:', len(train_set))
     print('X validation:', len(val_set))
     optimizer = Adam([
