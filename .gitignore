@@ -22,3 +22,5 @@ results/*
 src/.~lock.total.csv#
 src/*.sh
 src/*.xlsx
+src/*.md
+src/*.pdf
