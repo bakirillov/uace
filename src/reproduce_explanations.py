@@ -108,6 +108,7 @@ def make_logo(ale_vals, input_size, filename, temperature=0.01, what="mean effic
     ale_vals = softmax(ale_vals/temperature, 0).T
     ld = LogoData.from_counts("AGCT", ale_vals)
     logooptions = LogoOptions()
+    logooptions.color_scheme = classic
     logooptions.title = "ALE Logo for "+what
     logoformat = LogoFormat(ld, logooptions)
     png = png_formatter(ld, logoformat)
