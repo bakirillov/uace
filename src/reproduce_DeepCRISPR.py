@@ -122,16 +122,16 @@ if __name__ == "__main__":
         config = json.load(ih)
     deepCRISPRPATH = config["DeepCRISPRPath"]
     hct116 = pd.read_excel(
-        op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 0
+        deepCRISPRPATH, 0, engine="openpyxl"
     )
     hek293t = pd.read_excel(
-        op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 1
+        deepCRISPRPATH, 1, engine="openpyxl"
     )
     hela = pd.read_excel(
-        op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 2
+        deepCRISPRPATH, 2, engine="openpyxl"
     )
     hl60 = pd.read_excel(
-        op.join(deepCRISPRPATH, "13059_2018_1459_MOESM5_ESM.xlsx"), 3
+        deepCRISPRPATH, 3, engine="openpyxl"
     )
     hl60_not_in_hct116 = np.logical_not(
         hl60["sgRNA"].isin(hct116["sgRNA"])

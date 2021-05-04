@@ -108,7 +108,7 @@ if __name__ == "__main__":
         config = json.load(ih)
     if args.dataset == "Cpf1":
         data = pd.read_excel(
-            config["Cpf1OfftargetPath"]
+            config["Cpf1OfftargetPath"], skiprows=1, engine="openpyxl"
         ).dropna()
         all_indices = np.arange(data.shape[0])
         train_X, test_X = train_test_split(all_indices, test_size=0.1)

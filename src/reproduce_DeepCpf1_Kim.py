@@ -106,16 +106,16 @@ if __name__ == "__main__":
         config = json.load(ih)
     deepCpf1PATH = config["DeepCpf1KimPath"]
     train = pd.read_excel(
-        op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=0, header=1
+        deepCpf1PATH, sheet_name=0, header=1, engine="openpyxl"
     )
     H1 = pd.read_excel(
-        op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=1, header=1
+        deepCpf1PATH, sheet_name=1, header=1, engine="openpyxl"
     )
     H2 = pd.read_excel(
-        op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=2, header=1
+        deepCpf1PATH, sheet_name=2, header=1, engine="openpyxl"
     )
     H3 = pd.read_excel(
-        op.join(deepCpf1PATH, "nbt.4061-S4.xlsx"), sheet_name=3, header=1
+        deepCpf1PATH, sheet_name=3, header=1, engine="openpyxl"
     )
     train = train.iloc[np.arange(train.shape[0]-2)][:]
     H1 = H1.iloc[np.arange(H1.shape[0]-2)][:]
