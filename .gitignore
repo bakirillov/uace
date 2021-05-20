@@ -24,3 +24,4 @@ src/*.sh
 src/*.xlsx
 src/*.md
 src/*.pdf
+src/*.keras

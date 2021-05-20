@@ -101,18 +101,6 @@ def in_CI(ys, y_hats, stds):
 def rsquared(a, b):
     return(float(pearsonr(a, b)[0]**2))
 
-def iterate_minibatches(X, y, batchsize, permute=False):
-    indices = np.random.permutation(np.arange(len(X))) if permute else np.arange(len(X))
-    for start in range(0, len(indices), batchsize):
-        ix = indices[start: start + batchsize]
-        yield X[ix], y[ix]
-
-def moving_average(net1, net2, alpha=1):
-    """Moving average over weights as described in the SWA paper"""
-    for param1, param2 in zip(net1.parameters(), net2.parameters()):
-        param1.data *= (1.0 - alpha)
-        param1.data += param2.data * alpha
-
 def onehot(u):
     encoding = {
         1: [1,0,0,0],
@@ -162,136 +150,7 @@ class CoordPrimaryCapsuleLayer(PrimaryCapsuleLayer):
             )
         )
 
-
-class Coord2dPrimaryCapsuleLayer(PrimaryCapsuleLayer):
-
-    def __init__(
-        self, n_capsules=8, in_ch=256, out_ch=32, kernel_size=9, stride=2, use_cuda=True
-    ):
-        self.use_cuda = use_cuda
-        super(Coord2dPrimaryCapsuleLayer, self).__init__(
-            n_capsules, in_ch, out_ch, kernel_size, stride
-        )
-
-    def make_conv(self):
-        return(
-            CoordConv2d(
-                self.in_ch, self.out_ch, 
-                kernel_size=self.kernel_size, 
-                stride=self.stride, padding=0,
-                use_cuda=self.use_cuda
-            )
-        )
-
-
-class LinearPrimaryCapsuleLayer(PrimaryCapsuleLayer):
-
-    def __init__(
-        self, n_capsules=8, in_ch=256, out_ch=32, kernel_size=9, stride=2, dropout=0.5
-    ):
-        self.dropout = dropout
-        super(LinearPrimaryCapsuleLayer, self).__init__(
-            n_capsules, in_ch, out_ch, kernel_size, stride
-        )
-
-    def make_conv(self):
-        return(
-            nn.Sequential(
-                nn.Linear(self.in_ch, self.out_ch),
-                nn.Dropout(self.dropout)
-            )
-        )
-
-
-class GRUPrimaryCapsuleLayer(PrimaryCapsuleLayer):
-
-    def make_conv(self):
-        """Build a primary capsule which is just single layer LSTM"""
-        return(
-            nn.GRU(
-                self.in_ch, self.out_ch, num_layers=self.n_layers, 
-                dropout=self.dropout, batch_first=True
-            )
-        )
-
-    def __init__(
-        self, n_capsules=8, in_ch=256, out_ch=32, dropout=0, n_layers=4
-    ):
-        self.dropout = dropout
-        self.n_layers = n_layers
-        super(GRUPrimaryCapsuleLayer, self).__init__(
-            n_capsules, in_ch, out_ch, 9, 2
-        )
-
-    def forward(self, x):
-        """Compute outputs of capsules, reshape and squash"""
-        out = torch.cat(
-            [
-                a(x.reshape(x.shape[0],x.shape[1],1))[0].contiguous().view(x.size(0), -1, 1) 
-                    for a in self.capsules
-            ], 
-            dim=-1
-        )
-        return(squash(out))
-
-
-class GuideCaps(nn.Module):
-
-    def __init__(
-        self, guide_length, n_routes=120, n_classes=2, n_prim_capsules=128, n_iter=3,
-        use_deconv=False, rec_ks=5, rec_pad=8, use_cuda=True
-    ):
-        super(GuideCaps, self).__init__()
-        self.gl = guide_length
-        self.n_routes = n_routes
-        self.n_classes = n_classes
-        self.n_iter = n_iter
-        self.use_cuda = use_cuda
-        self.n_prim_capsules = n_prim_capsules
-        self.conv = nn.Sequential(
-            CoordConv1d(
-                in_channels=4, 
-                out_channels=80,
-                kernel_size=5,
-                stride=1, use_cuda=self.use_cuda
-            ),
-            nn.LeakyReLU(inplace=True)
-        )
-        self.primcaps = CoordPrimaryCapsuleLayer(
-            n_capsules=self.n_prim_capsules, in_ch=80, out_ch=16, kernel_size=2,
-            stride=1, use_cuda=self.use_cuda
-        )
-        self.classcaps = SecondaryCapsuleLayer(
-            n_capsules=self.n_classes, n_iter=self.n_iter, 
-            in_ch=self.n_prim_capsules, out_ch=32, n_routes=self.n_routes,
-            cuda=self.use_cuda
-        )
-        self.deconv = use_deconv
-        if not self.deconv:
-            self.decoder = RegularizingDecoder(
-                dims=[32*self.n_classes, 128, 256, 4*self.gl]
-            )
-        else:
-            self.decoder = nn.ConvTranspose1d(
-                in_channels=2, out_channels=4, kernel_size=rec_ks, padding=rec_pad
-            )
-
-    def forward(self, x):
-        co = self.conv(x)
-        pc = self.primcaps(co)
-        internal = self.classcaps(pc)
-        lengths = (internal**2).sum(dim=-1)**0.5
-        _, max_caps_index = lengths.max(dim=-1)
-        masked = torch.eye(self.n_classes)
-        masked = masked.cuda() if torch.cuda.is_available() and self.use_cuda else masked
-        masked = masked.index_select(dim=0, index=max_caps_index.data)
-        masked_internal = (internal*masked[:,:,None])
-        if not self.deconv:
-            masked_internal = masked_internal.view(x.size(0), -1)
-        reconstruction = self.decoder(masked_internal)
-        return(internal, reconstruction, lengths, max_caps_index, masked_internal)
-
-
+    
 class OneHotAndCut():
 
     def __init__(self, pam, pam_before, cut_pam, cut_at_start=0, cut_at_end=0, fold=False):
@@ -315,70 +174,7 @@ class OneHotAndCut():
             f_oh = correct_order(onehot(fold), k=3).reshape(3, len(sequence))
            # energy = np.repeat(energy, 4+3).reshape(7,1)
             s_oh = np.concatenate([s_oh, f_oh])  # , energy], 1)
-        return(s_oh)          
-
-
-class BinaryMismatches():
-
-    def __init__(
-        self, pam, pam_before, cut_pam, cut_at_start=0, cut_at_end=0, recurrent=False,
-        use_peng_additions=False
-    ):
-        self.PAM = pam
-        self.pam_before = pam_before
-        self.cut_pam = cut_pam
-        self.cut_at_start = cut_at_start
-        self.cut_at_end = cut_at_end
-        self.recurrent = recurrent
-        self.use_peng_additions = use_peng_additions
-        self.scheme = {
-            "AT": 0, "AC": 1, "AG": 2,
-            "TA": 3, "TC": 4, "TG": 5,
-            "CA": 6, "CT": 7, "CG": 8,
-            "GA": 9, "GT": 10, "GC": 11,
-        }
-
-    def process(self, x):
-        sequence = x[self.cut_at_start:len(x)-self.cut_at_end]
-        if self.cut_pam:
-            if self.pam_before:
-                sequence = sequence[len(self.PAM)-1:]
-            else:
-                sequence = sequence[0:-len(self.PAM)+1]
-        return(sequence)
-
-    @staticmethod
-    def count_gc(s):
-        s = s.upper()
-        gc = s.count("G")+s.count("C")
-        at = s.count("A")+s.count("T")
-        gc_c = gc/len(s)
-        gc_skew = 0 if gc == 0 else (s.count("G")-s.count("C"))/gc
-        at_skew = 0 if at == 0 else (s.count("A")-s.count("T"))/at
-        rat = 0 if at_skew == 0 else gc_skew/at_skew
-        return(np.array([gc, gc_c, gc_skew, at_skew, rat]))
-
-    @staticmethod
-    def compute_peng_additions(s1, s2):
-        ad1 = BinaryMismatches.count_gc(s1)
-        ad2 = BinaryMismatches.count_gc(s2)
-        return(ad2-ad1)
-
-    def __call__(self, x):
-        sequence1, sequence2 = list(map(lambda u: self.process(u), x.split(",")))
-        assert len(sequence1)==len(sequence2)
-        out = np.zeros(shape=(12,len(sequence1)))
-        for i,(a,b) in enumerate(zip(sequence1, sequence2)):
-            if a != b:
-                out[self.scheme[a+b], i] += 1
-        if self.recurrent:
-            out = out.reshape(-1)
-            if self.use_peng_additions:
-                adds = BinaryMismatches.compute_peng_additions(
-                    equence1, sequence2
-                )
-                out = np.concatenate([out, adds])
-        return(out)
+        return(s_oh)
 
 
 class ToTensor():
@@ -458,24 +254,7 @@ class DeepCRISPRDataset(Dataset):
                     break
         return(c)
 
-
-class OneHotCutDiff():
-
-    def __init__(self, pam, pam_before, cut_pam):
-        self.PAM = pam
-        self.pam_before = pam_before
-        self.cut_pam = cut_pam
-        self.ohc = OneHotAndCut(self.PAM, self.pam_before, self.cut_pam)
-
-    def __call__(self, x):
-        sequence = x
-        guide, target = x.split(",")
-        guide = self.ohc(guide)
-        target = self.ohc(target)
-        difference = guide - target
-        return(difference)
-
-
+    
 def plot_LC(tr, te, proportions, description, what="PCC"):
     means_tr = [np.mean(tr[what][a], 0)[0] for a in proportions]
     means_te = [np.mean(te[what][a], 0)[0] for a in proportions]
@@ -727,55 +506,6 @@ class GuideHRNN(nn.Module):
         )
         return(internal, lengths, reconstructions)
 
-
-class OfftargetHOM(nn.Module):
-
-    def __init__(
-        self, guide_length=23, addition_length=5,
-        capsule_dimension=32, n_classes=2
-    ):
-        super(OfftargetHOM, self).__init__()
-        self.guide_length = guide_length
-        self.addition_length = addition_length
-        self.n_classes = n_classes
-        self.capsule_dimension = capsule_dimension
-        hom_input_length = self.guide_length*12  # +self.addition_length
-        self.preprocess = nn.Sequential(
-            nn.Conv2d(
-                in_channels=1, out_channels=64, kernel_size=(3, 3), stride=1
-            ),
-            nn.ReLU(),
-            models.resnet.BasicBlock(64, 64),
-            models.resnet.BasicBlock(64, 64),
-            models.resnet.BasicBlock(64, 64),
-            models.resnet.BasicBlock(64, 64)
-        )
-        self.hom = HitOrMissLayer(
-            in_ch=13440,
-            out_ch=self.capsule_dimension,
-            n_classes=self.n_classes
-        )
-        self.decoder = RegularizingDecoder(
-            [
-                self.capsule_dimension*self.n_classes,
-                512, 1024,
-                hom_input_length
-            ]
-        )
-
-    def forward(self, x):
-        preprocessed = self.preprocess(
-            x[:, :-5].reshape(x.shape[0], 1, 12, 23)
-        )
-        hom = self.hom(preprocessed)
-        internal = 0.5-hom
-        lengths = (internal**2).sum(dim=-1)**0.5
-        _, max_caps_index = lengths.max(dim=-1)
-        masked_internal = mask_hom(hom, max_caps_index.type(torch.FloatTensor))
-        reconstructions = self.decoder(
-            masked_internal.reshape(masked_internal.shape[0], -1)
-        )
-        return(internal, lengths, reconstructions)
     
 class GaussianProcessLayer(DeepGPLayer):
 
