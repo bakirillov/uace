@@ -8,7 +8,7 @@ templates = {
     "DeepHFWt": "python reproduce_DeepHF.py -d WT -m CNN -s SEED -p PROP -o OUTPUT_PROP_",
     "DeepHFeSpCas9": "python reproduce_DeepHF.py -d eSpCas9 -m CNN -s SEED -p PROP -o OUTPUT_PROP_",
     "DeepHFSpCas9HF1": "python reproduce_DeepHF.py -d SpCas9HF1 -m CNN -s SEED -p PROP -o OUTPUT_PROP_",
-    "Weissman": "python reproduce_2d_models.py -s SEED -p PROP -o OUTPUT_cnn_elbo_PROP_",
+    "Cas9_Offtarget": "python reproduce_2d_models.py -s SEED -p PROP -o OUTPUT_cnn_elbo_PROP_",
     "Cpf1_Offtarget": "python reproduce_2d_models.py -d Cpf1 -s SEED -p PROP -o OUTPUT_cnn_elbo_PROP_",
 }
 
@@ -66,7 +66,7 @@ if __name__ == "__main__":
         ).replace("SEED", str(args.seed))+" -u"
         script.write(current+"\n")
     script.write("\n")
-    if "Offtarget" not in T or "Weissman" not in T:
+    if "Offtarget" not in T:
         for b in proportions:
             current = T.replace(
                 "PROP", str(b)

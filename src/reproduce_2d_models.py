@@ -25,7 +25,6 @@ from tpot import TPOTRegressor
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from capsules.capsules import *
-from IPython.display import Image
 from matplotlib.lines import Line2D
 from torch.autograd import Variable
 from matplotlib.patches import Patch

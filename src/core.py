@@ -27,7 +27,6 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from capsules.capsules import *
 from CoordConv.coordconv import *
-from IPython.display import Image
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from sklearn.metrics import accuracy_score
