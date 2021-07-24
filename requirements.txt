@@ -1,5 +1,5 @@
 torch==1.9.0
-torchvision==0.9.0.dev20210319+cu111
+torchvision==0.9.0
 gpytorch==1.4.0
 biopython==1.74
 matplotlib
