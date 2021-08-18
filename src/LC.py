@@ -1,3 +1,11 @@
+"""Learning curve script maker
+
+This script allows the user to generate scripts that train learning curve models.
+
+This script is not supposed to be ran as a module.
+"""
+
+
 import os
 import argparse
 import os.path as op

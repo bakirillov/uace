@@ -22,7 +22,6 @@ from tqdm import tqdm
 from time import time
 from copy import deepcopy
 from torch.optim import Adam
-from tpot import TPOTRegressor
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from capsules.capsules import *
@@ -95,6 +94,20 @@ if __name__ == "__main__":
         help="set proportion of the data (used for learning curve)",
         default="-1"
     )
+    parser.add_argument(
+        "-f", "--folds",
+        dest="folds",
+        action="store",
+        help="set the folds file",
+        default=None
+    )
+    parser.add_argument(
+        "-n", "--number",
+        dest="fold_number",
+        action="store",
+        help="set the folds number",
+        default=0
+    )
     args = parser.parse_args()
     if not op.exists(op.split(args.output)[0]):
         os.makedirs(op.split(args.output)[0])
@@ -127,36 +140,57 @@ if __name__ == "__main__":
     H2["label"] = H2[H2.columns[-1]].apply(lambda x: x/100 if x > 0 else 0)
     H3["label"] = H3[H3.columns[-1]].apply(lambda x: x/100 if x > 0 else 0)
     transformer = get_Cpf1_transformer()
-    train_indices = np.arange(train.shape[0])
-    if args.proportion != "-1":
-        train_indices, _ = train_test_split(
-            train_indices, train_size=float(args.proportion)
+    if args.folds == None:
+        train_indices = np.arange(train.shape[0])
+        if args.proportion != "-1":
+            train_indices, _ = train_test_split(
+                train_indices, train_size=float(args.proportion)
+            )
+        train_set = DeepHFDataset(
+            train, train_indices, transform=transformer,
+            sequence_column=train.columns[1], label_column="label"
         )
-    train_set = DeepHFDataset(
-        train, train_indices, transform=transformer,
-        sequence_column=train.columns[1], label_column="label"
-    )
-    H1_set = DeepHFDataset(
-        H1, np.arange(H1.shape[0]), transform=transformer,
-        sequence_column=H1.columns[1], label_column="label"
-    )
-    H2_set = DeepHFDataset(
-        H2, np.arange(H2.shape[0]), transform=transformer,
-        sequence_column=H2.columns[1], label_column="label"
-    )
-    H3_set = DeepHFDataset(
-        H3, np.arange(H3.shape[0]), transform=transformer,
-        sequence_column=H3.columns[1], label_column="label"
-    )
+        H1_set = DeepHFDataset(
+            H1, np.arange(H1.shape[0]), transform=transformer,
+            sequence_column=H1.columns[1], label_column="label"
+        )
+        H2_set = DeepHFDataset(
+            H2, np.arange(H2.shape[0]), transform=transformer,
+            sequence_column=H2.columns[1], label_column="label"
+        )
+        H3_set = DeepHFDataset(
+            H3, np.arange(H3.shape[0]), transform=transformer,
+            sequence_column=H3.columns[1], label_column="label"
+        )
+    else:
+        with open(args.folds, "rb") as ih:
+            kf = pkl.load(ih)
+        train_indices, test_indices = kf[int(args.fold_number)]
+        train_set = DeepHFDataset(
+            train, train_indices, transform=transformer,
+            sequence_column=train.columns[1], label_column="label"
+        )
+        H1_set = DeepHFDataset(
+            train, test_indices, transform=transformer,
+            sequence_column=train.columns[1], label_column="label"
+        )
+        H2_set = DeepHFDataset(
+            train, test_indices, transform=transformer,
+            sequence_column=train.columns[1], label_column="label"
+        )
+        H3_set = DeepHFDataset(
+            train, test_indices, transform=transformer,
+            sequence_column=train.columns[1], label_column="label"
+        )
     train_set_loader = DataLoader(train_set, shuffle=True, batch_size=256)
     H1_loader = DataLoader(H1_set, shuffle=True, batch_size=256)
     H2_loader = DataLoader(H2_set, shuffle=True, batch_size=256)
     H3_loader = DataLoader(H3_set, shuffle=True, batch_size=256)
     if args.model == "RNN":
-        encoder = GuideHRNN(21, 32, 3360, n_classes=5).cuda()
+        encoder = GuideHRNN(21, 32, 3360, n_classes=5)#.cuda()
     elif args.model == "CNN":
-        encoder = GuideHN(21, 32, 1360, n_classes=5).cuda()
-    model = DKL(encoder, [1, 5*32]).cuda().eval()
+        encoder = GuideHN(21, 32, 1360, n_classes=5)#.cuda()
+    model = DKL(encoder, [1, 5*32]).eval()#.cuda()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
     print('X H1:', len(H1_set))
@@ -172,7 +206,7 @@ if __name__ == "__main__":
     training, validation = model.fit(
         train_set_loader, [H1_loader, H2_loader, H3_loader], EPOCHS,
         scheduler, optimizer, mll, args.output,
-        lambda a, b: float(spearmanr(a, b)[0]), use_mse=args.mse
+        lambda a, b: float(spearmanr(a, b)[0]), use_mse=args.mse, use_cuda=False
     )
     y_hat_T = []
     y_T = []
@@ -250,7 +284,8 @@ if __name__ == "__main__":
         y_hat_H3.extend(
             [float(a) for a in predictions]
         )
-    with open(args.output+".json", "w") as oh:
+    jsonfile = args.output+".json" if args.folds == None else args.output+"."+str(args.fold_number)+".json"
+    with open(jsonfile, "w") as oh:
         oh.write(
             json.dumps(
                 {

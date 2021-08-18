@@ -1,7 +1,9 @@
-#!/usr/bin/env python
-# coding: utf-8
+"""Script for running the models on Chr22 data.
 
-# In[1]:
+This script allows the user to compute the analysis for Chr22.
+
+This script is not supposed to be ran as a module.
+"""
 
 
 import os
@@ -216,8 +218,6 @@ if __name__ == "__main__":
             print(E)
             nothing.append(a)
         else:
-            #print("tl", args.total_length)
-            #print(current_df.shape, len(current_df[3][0]))
             if not args.total_length:
                 current_df = current_df[
                     current_df[3].apply(lambda x: len(x) == GLEN)
@@ -227,8 +227,6 @@ if __name__ == "__main__":
                     current_df[3].apply(lambda x: len(x) == int(args.total_length))
                 ]
             current_df[6] = [a]*current_df.shape[0]
-            #print(current_df.shape)
-            #input()
             tds = DeepHFDataset(
                 current_df, np.arange(current_df.shape[0]),
                 transformer, sequence_column=3,
@@ -238,13 +236,11 @@ if __name__ == "__main__":
             oa = []
             va = []
             for transformed_batch, _ in tqdm(tld):
-                #print(transformed_batch.shape)
                 if args.architecture == "2D-CNN":
                     transformed_batch = torch.stack(
                         [transformed_batch, transformed_batch]
                     )
                     transformed_batch = transformed_batch.permute(1, 0, 2, 3)
-                #print(transformed_batch.shape)
                 tb = model(transformed_batch)
                 o = model.likelihood(tb[0]).mean.mean(0).cpu().data.numpy()
                 v = model.likelihood(tb[0]).variance.mean(0).cpu().data.numpy()

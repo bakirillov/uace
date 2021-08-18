@@ -102,6 +102,20 @@ if __name__ == "__main__":
         help="set proportion of the data (used for learning curve)",
         default="-1"
     )
+    parser.add_argument(
+        "-f", "--folds",
+        dest="folds",
+        action="store",
+        help="set the folds file",
+        default=None
+    )
+    parser.add_argument(
+        "-n", "--number",
+        dest="fold_number",
+        action="store",
+        help="set the folds number",
+        default=0
+    )
     args = parser.parse_args()
     if not op.exists(op.split(args.output)[0]):
         os.makedirs(op.split(args.output)[0])
@@ -122,35 +136,51 @@ if __name__ == "__main__":
     elif args.dataset == "SpCas9HF1":
         data = data[["21mer", "SpCas9-HF1_Efficiency"]].dropna()
         what = "SpCas9-HF1_Efficiency"
-    train_X, testval_X, _, _ = train_test_split(
-        np.arange(data.shape[0]), np.arange(data.shape[0]),
-        test_size=0.085+0.15
-    )
-    print(train_X.shape)
-    if args.proportion != "-1":
-        train_X, _ = train_test_split(
-            train_X, train_size=float(args.proportion)
+    print(args.folds)
+    if args.folds == None:
+        train_X, testval_X, _, _ = train_test_split(
+            np.arange(data.shape[0]), np.arange(data.shape[0]),
+            test_size=0.085+0.15
         )
-    print(train_X.shape)
-    test_X, val_X, _, _ = train_test_split(
-        testval_X, testval_X, test_size=0.085/(0.085+0.15)
-    )
-    train_set = DeepCRISPRDataset(
-        data, train_X, transformer, sequence_column="21mer", label_column=what
-    )
-    test_set = DeepCRISPRDataset(
-        data, test_X, transformer, sequence_column="21mer", label_column=what
-    )
-    val_set = DeepCRISPRDataset(
-        data, val_X, transformer, sequence_column="21mer", label_column=what
-    )
+        print(train_X.shape)
+        if args.proportion != "-1":
+            train_X, _ = train_test_split(
+                train_X, train_size=float(args.proportion)
+            )
+        print(train_X.shape)
+        test_X, val_X, _, _ = train_test_split(
+            testval_X, testval_X, test_size=0.085/(0.085+0.15)
+        )
+        train_set = DeepCRISPRDataset(
+            data, train_X, transformer, sequence_column="21mer", label_column=what
+        )
+        test_set = DeepCRISPRDataset(
+            data, test_X, transformer, sequence_column="21mer", label_column=what
+        )
+        val_set = DeepCRISPRDataset(
+            data, val_X, transformer, sequence_column="21mer", label_column=what
+        )
+    else:
+        with open(args.folds, "rb") as ih:
+            kf = pkl.load(ih)
+        train, test = kf[int(args.fold_number)]
+        print(train.shape, test.shape, data.shape)
+        train_set = DeepCRISPRDataset(
+            data, train, transformer, sequence_column="21mer", label_column=what
+        )
+        test_set = DeepCRISPRDataset(
+            data, test, transformer, sequence_column="21mer", label_column=what
+        )
+        val_set = DeepCRISPRDataset(
+            data, test, transformer, sequence_column="21mer", label_column=what
+        )
     train_set_loader = DataLoader(train_set, shuffle=True, batch_size=256)
     val_set_loader = DataLoader(val_set, shuffle=True, batch_size=256)
     if args.model == "RNN":
-        encoder = GuideHRNN(21, 32, 3360, n_classes=5).cuda()
+        encoder = GuideHRNN(21, 32, 3360, n_classes=5)#.cuda()
     elif args.model == "CNN":
-        encoder = GuideHN(21, 32, 1360, n_classes=5).cuda()
-    model = DKL(encoder, [1, 5*32]).cuda().eval()
+        encoder = GuideHN(21, 32, 1360, n_classes=5)#.cuda()
+    model = DKL(encoder, [1, 5*32]).eval()#.cuda().eval()
     EPOCHS = config["epochs"]
     if not op.exists(args.output):
         os.makedirs(args.output)
@@ -168,7 +198,7 @@ if __name__ == "__main__":
     training, validation = model.fit(
         train_set_loader, [val_set_loader], EPOCHS,
         scheduler, optimizer, mll, args.output,
-        lambda a, b: float(spearmanr(a, b)[0]), use_mse=args.mse
+        lambda a, b: float(spearmanr(a, b)[0]), use_mse=args.mse, use_cuda=False
     )
     y_hat_T = []
     y_T = []
@@ -210,7 +240,8 @@ if __name__ == "__main__":
         y_hat.extend(
             [float(a) for a in predictions]
         )
-    with open(args.output+".json", "w") as oh:
+    jsonfile = args.output+".json" if args.folds == None else args.output+"."+str(args.fold_number)+".json"
+    with open(jsonfile, "w") as oh:
         oh.write(
             json.dumps(
                 {

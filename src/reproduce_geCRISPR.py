@@ -21,8 +21,6 @@ import os.path as op
 from tqdm import tqdm
 from time import time
 from copy import deepcopy
-from torch.optim import Adam
-from tpot import TPOTRegressor
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from capsules.capsules import *
@@ -95,6 +93,20 @@ if __name__ == "__main__":
         help="set proportion of the data (used for learning curve)",
         default="-1"
     )
+    parser.add_argument(
+        "-f", "--folds",
+        dest="folds",
+        action="store",
+        help="set the folds file",
+        default=None
+    )
+    parser.add_argument(
+        "-n", "--number",
+        dest="fold_number",
+        action="store",
+        help="set the folds number",
+        default=0
+    )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
@@ -108,31 +120,46 @@ if __name__ == "__main__":
     V520PATH = config["V520PATH"]
     if not op.exists(op.split(args.output)[0]):
         os.makedirs(op.split(args.output)[0])
-    train_X_T3619, test_X_T3619, _, _ = train_test_split(
-        np.arange(3619), np.arange(3619), test_size=0.2
-    )
-    print(train_X_T3619)
-    if args.proportion != "-1":
-        train_X_T3619 = train_test_split(
-            train_X_T3619, train_size=float(args.proportion)
-        )[0]
+    print(args.folds)
+    if args.folds == None:
+        train_X_T3619, test_X_T3619, _, _ = train_test_split(
+            np.arange(3619), np.arange(3619), test_size=0.2
+        )
         print(train_X_T3619)
-    train_set = GeCRISPRDataset(
-        T3619PATH, train_X_T3619, transform=transformer, classification=False
-    )
-    val_set = GeCRISPRDataset(
-        T3619PATH, test_X_T3619, transform=transformer, classification=False
-    )
-    test_set = GeCRISPRDataset(
-        V520PATH, np.arange(520), transform=transformer, classification=False
-    )
+        if args.proportion != "-1":
+            train_X_T3619 = train_test_split(
+                train_X_T3619, train_size=float(args.proportion)
+            )[0]
+            print(train_X_T3619)
+        train_set = GeCRISPRDataset(
+            T3619PATH, train_X_T3619, transform=transformer, classification=False
+        )
+        val_set = GeCRISPRDataset(
+            T3619PATH, test_X_T3619, transform=transformer, classification=False
+        )
+        test_set = GeCRISPRDataset(
+            V520PATH, np.arange(520), transform=transformer, classification=False
+        )
+    else:
+        with open(args.folds, "rb") as ih:
+            kf = pkl.load(ih)
+        train, test = kf[int(args.fold_number)]
+        train_set = GeCRISPRDataset(
+            T3619PATH, train, transform=transformer, classification=False
+        )
+        val_set = GeCRISPRDataset(
+            T3619PATH, test, transform=transformer, classification=False
+        )
+        test_set = GeCRISPRDataset(
+            T3619PATH, test, transform=transformer, classification=False
+        )
     train_set_loader = DataLoader(train_set, shuffle=True, batch_size=256)
     val_set_loader = DataLoader(val_set, shuffle=True, batch_size=256)
     if args.model == "RNN":
-        encoder = GuideHRNN(20, 32, 3200, n_classes=5).cuda()
+        encoder = GuideHRNN(20, 32, 3200, n_classes=5)#.cuda()
     elif args.model == "CNN":
-        encoder = GuideHN(20, 32, 1280, n_classes=5).cuda()
-    model = DKL(encoder, [1, 5*32]).cuda().eval()
+        encoder = GuideHN(20, 32, 1280, n_classes=5)#.cuda()
+    model = DKL(encoder, [1, 5*32]).eval()#.cuda().eval()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
     print('X validation:', len(val_set))
@@ -146,7 +173,7 @@ if __name__ == "__main__":
     training, validation = model.fit(
         train_set_loader, [val_set_loader], EPOCHS,
         scheduler, optimizer, mll, args.output,
-        lambda a, b: float(pearsonr(a, b)[0]), use_mse=args.mse
+        lambda a, b: float(pearsonr(a, b)[0]), use_mse=args.mse, use_cuda=False
     )
     y_hat_T = []
     y_T = []
@@ -186,7 +213,8 @@ if __name__ == "__main__":
         y_hat.extend(
             [float(a) for a in predictions]
         )
-    with open(args.output+".json", "w") as oh:
+    jsonfile = args.output+".json" if args.folds == None else args.output+"."+str(args.fold_number)+".json"
+    with open(jsonfile, "w") as oh:
         oh.write(
             json.dumps(
                 {

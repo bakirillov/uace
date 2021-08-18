@@ -1,7 +1,9 @@
-#!/usr/bin/env python
-# coding: utf-8
+"""Script for training the 2D models (Jost et al. and Cas12a off-targets).
 
-# In[1]:
+This script allows the user to train a 2D model.
+
+This script is not supposed to be ran as a module.
+"""
 
 
 import os
@@ -21,7 +23,6 @@ from tqdm import tqdm
 from time import time
 from copy import deepcopy
 from torch.optim import Adam
-from tpot import TPOTRegressor
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from capsules.capsules import *
@@ -97,6 +98,20 @@ if __name__ == "__main__":
         help="set proportion of the data (used for learning curve)",
         default="-1"
     )
+    parser.add_argument(
+        "-f", "--folds",
+        dest="folds",
+        action="store",
+        help="set the folds file",
+        default=None
+    )
+    parser.add_argument(
+        "-n", "--number",
+        dest="fold_number",
+        action="store",
+        help="set the folds number",
+        default=0
+    )
     args = parser.parse_args()
     np.random.seed(int(args.seed))
     torch.manual_seed(int(args.seed))
@@ -107,7 +122,7 @@ if __name__ == "__main__":
         config = json.load(ih)
     if args.dataset == "Cpf1":
         data = pd.read_excel(
-            config["Cpf1OfftargetPath"], skiprows=1, engine="openpyxl"
+            config["Cpf1OfftargetPath"], engine="openpyxl"
         ).dropna()
         all_indices = np.arange(data.shape[0])
         train_X, test_X = train_test_split(all_indices, test_size=0.1)
@@ -125,22 +140,35 @@ if __name__ == "__main__":
             ]
         )
         data[data.columns[-1]] = data[data.columns[-1]]/100
-        train_set = JostEtAlDataset(
-            data, train_X, transformer,# n_bins=0, 
-            genome_column="Target sequence (5' to 3')",
-            sgRNA_column="Guide sequence (5' to 3')",
-            label_column="Indel frequency (%)",
-        )
-        #print(data.iloc[train_X].iloc[592])
-        #for i,b in enumerate(train_set):
-        #    print(i, b)
-        #print(train_set[592])
-        val_set = JostEtAlDataset(
-            data, test_X, transformer, 
-            genome_column="Target sequence (5' to 3')",
-            sgRNA_column="Guide sequence (5' to 3')",
-            label_column="Indel frequency (%)",
-        )
+        if args.folds == None:
+            train_set = JostEtAlDataset(
+                data, train_X, transformer,# n_bins=0, 
+                genome_column="Target sequence (5' to 3')",
+                sgRNA_column="Guide sequence (5' to 3')",
+                label_column="Indel frequency (%)",
+            )
+            val_set = JostEtAlDataset(
+                data, test_X, transformer, 
+                genome_column="Target sequence (5' to 3')",
+                sgRNA_column="Guide sequence (5' to 3')",
+                label_column="Indel frequency (%)",
+            )
+        else:
+            with open(args.folds, "rb") as ih:
+                kf = pkl.load(ih)
+            train_indices, test_indices = kf[int(args.fold_number)]
+            train_set = JostEtAlDataset(
+                data, train_indices, transformer,# n_bins=0, 
+                genome_column="Target sequence (5' to 3')",
+                sgRNA_column="Guide sequence (5' to 3')",
+                label_column="Indel frequency (%)",
+            )
+            val_set = JostEtAlDataset(
+                data, test_indices, transformer, 
+                genome_column="Target sequence (5' to 3')",
+                sgRNA_column="Guide sequence (5' to 3')",
+                label_column="Indel frequency (%)",
+            )
         train_set_loader = DataLoader(
             train_set, shuffle=True, batch_size=8
         )
@@ -149,31 +177,36 @@ if __name__ == "__main__":
         )
         encoder = GuideHN2d(
             23, capsule_dimension=32, n_routes=1600, n_classes=5, n_channels=2,
-        ).cuda()
-        model = DKL(encoder, [1, 5*32]).cuda().eval()
+        )#.cuda()
+        model = DKL(encoder, [1, 5*32]).eval()#.cuda().eval()
     elif args.dataset == "Cas9":
         data = pd.read_table(
             config["JostEtAlDatasetPath"], index_col=0
         )
         series = data['perfect match sgRNA']
         print('series:', series.shape)
-        val_series = np.random.choice(
-            np.unique(series), size=int(len(np.unique(series))*.20),
-            replace=False
-        )
-        val_indices = np.where(np.isin(series, val_series))
-        train_indices = np.where(~np.isin(series, val_series))
-        if args.proportion != "-1":
-            print(train_indices[0].shape, args.proportion)
-            train_indices, _ = train_test_split(
-                train_indices[0], train_size=float(args.proportion)
+        if args.folds == None:
+            val_series = np.random.choice(
+                np.unique(series), size=int(len(np.unique(series))*.20),
+                replace=False
             )
+            val_indices = np.where(np.isin(series, val_series))
+            train_indices = np.where(~np.isin(series, val_series))
+            if args.proportion != "-1":
+                print(train_indices[0].shape, args.proportion)
+                train_indices, _ = train_test_split(
+                    train_indices[0], train_size=float(args.proportion)
+                )
+        else:
+            with open(args.folds, "rb") as ih:
+                kf = pkl.load(ih)
+            train_indices, val_indices = kf[int(args.fold_number)]
         u = ImperfectMatchTransform(
             "NGG", False, False, fold=False, cut_at_start=2, cut_at_end=1
         )
         transformer = transforms.Compose(
             [
-                u, ToTensor(cudap=True)
+                u, ToTensor(cudap=False)
             ]
         )
         train_set = JostEtAlDataset(data, train_indices, transformer)
@@ -186,8 +219,8 @@ if __name__ == "__main__":
         )
         encoder = GuideHN2d(
             23, capsule_dimension=32, n_routes=1600, n_classes=5, n_channels=2,
-        ).cuda()
-        model = DKL(encoder, [1, 5*32]).cuda().eval()
+        )#.cuda()
+        model = DKL(encoder, [1, 5*32]).eval()#.cuda().eval()
     EPOCHS = config["epochs"]
     print('X train:', len(train_set))
     print('X validation:', len(val_set))
@@ -200,7 +233,7 @@ if __name__ == "__main__":
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     training, validation = model.fit(
         train_set_loader, [val_set_loader], EPOCHS,
-        scheduler, optimizer, mll, args.output, rsquared, args.mse
+        scheduler, optimizer, mll, args.output, rsquared, args.mse, False
     )
     y_hat = []
     y = []
@@ -244,7 +277,8 @@ if __name__ == "__main__":
         y_hat_train.extend(
             [float(a) for a in predictions]
         )
-    with open(args.output+".json", "w") as oh:
+    jsonfile = args.output+".json" if args.folds == None else args.output+"."+str(args.fold_number)+".json"
+    with open(jsonfile, "w") as oh:
         oh.write(
             json.dumps(
                 {
