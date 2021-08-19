@@ -1,7 +1,9 @@
-#!/usr/bin/env python
-# coding: utf-8
+"""Script for training the geCRISPR model.
 
-# In[1]:
+This script allows the user to train a geCRISPR model.
+
+This script is not supposed to be ran as a module.
+"""
 
 
 import os

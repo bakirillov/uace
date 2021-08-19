@@ -1,7 +1,21 @@
-#!/usr/bin/env python
-# coding: utf-8
+"""Script for computing the explanations (heatmaps and logo sequences).
 
-# In[149]:
+This script allows the user to compute the explanations for the specified model.
+
+This file can be imported as a module and exports the following:
+
+    ALEDataset - the torch dataset class 
+        to use with ALE
+    ModelForALE - the wrapper for models 
+        to use with ALE
+    make_logo - function to compute the logo 
+        sequence for a model
+    get_m - function to construct the feature 
+        names for ALE
+    make_random - function to generate random inputs
+    init_names - function to initialize the names 
+        for ALE output
+"""
 
 
 import os
@@ -68,25 +82,73 @@ import argparse
 
 
 class ALEDataset(Dataset):
+    """
+    A torch Dataset class to use with ALE
+    -------------------------------------
+
+    ...
+
+    Attributes
+    ----------
+    x : np.array
+        the input data
+
+    Methods
+    -------
+    __len__(self)   
+        length of the input
+    __getitem__(self, ind)
+        returns the data according to index
+    """
 
     def __init__(self, x):
         self.x = x
         
     def __len__(self):
+        """length of the input"""
         return(self.x.shape[0])
 
     def __getitem__(self, ind):
+        """returns the data according to index"""
         return(self.x[ind])
 
 
 class ModelForALE():
+    """
+    A wrapper for models to use with ALE
+    ------------------------------------
+
+    ...
+
+    Attributes
+    ----------
+    encoder: torch model
+        the encoder (GuideHN, GuideHRNN, GuideHN2d)
+    model: torch model
+        the GP model (DKL)
+    shape: tuple of ints
+        the input shape for generation
+
+    Methods
+    -------
+    predict_single(self, x)  
+        construct a single input for ALE
+    predict(self, x)
+        convert inputs to the DKL model to inputs to ALE
+    """
     
-    def __init__(self, encoder, model, shape, mean=True):
+    def __init__(self, encoder, model, shape):
         self.M = model
         self.E = encoder
         self.shape = shape
         
     def predict_single(self, x):
+        """
+        Construct a single input for ALE
+        
+        Outputs the means and variances computed by
+        the DKL model for a single input x
+        """
         X_h = x.reshape(-1, *self.shape).to(0)
         tb = self.M(X_h)
         l = self.M.likelihood(tb[0])
@@ -96,6 +158,12 @@ class ModelForALE():
         return(out.T)
     
     def predict(self, x):
+        """
+        Convert inputs to the DKL model to inputs to ALE
+        
+        Outputs the means and variances computed by
+        the DKL model for a tensor of x
+        """
         ds = ALEDataset(x)
         ld = DataLoader(ds, shuffle=False, batch_size=256)
         out = []
@@ -105,6 +173,18 @@ class ModelForALE():
 
     
 def make_logo(ale_vals, input_size, filename, temperature=0.01, what="mean efficiency"):
+    """
+    Compute logo for the ALE values
+    
+    ale_vals - the results of ALE
+    input_size - the shape of input
+    filename - the output filename
+    temperature - the softmax temperature
+    what - the description of data
+    
+    Writes a logo.png file
+    Outputs None
+    """
     ale_vals = softmax(ale_vals/temperature, 0).T
     ld = LogoData.from_counts("AGCT", ale_vals)
     logooptions = LogoOptions()
@@ -116,6 +196,16 @@ def make_logo(ale_vals, input_size, filename, temperature=0.01, what="mean effic
         oh.write(png)
         
 def get_m(rownames, colnames, INPUT_SIZE, seqnames=None):
+    """
+    Construct the feature names for ALE
+    
+    rownames - names for rows (A, T, G, C)
+    colnames - names for columns (from 0 to guide length)
+    INPUT_SIZE - the length of gRNA
+    seqnames - the names of sequences (gRNA, target)
+    
+    Outputs a tuple of the feature names list m and its shape
+    """
     if seqnames:
         m_shape = (2, 4, INPUT_SIZE)
         m = np.zeros(shape=m_shape).astype("str")
@@ -132,6 +222,15 @@ def get_m(rownames, colnames, INPUT_SIZE, seqnames=None):
     return(m.reshape(np.product(m_shape)).tolist(), m_shape)
     
 def make_random(n, INPUT_SIZE, transformer, two=False):
+    """
+    Generate a set of random inputs for the model
+    
+    n - number of random inputs
+    INPUT_SIZE - length of gRNA
+    transformer - torch.Compose transformer class
+    
+    Outputs random inputs
+    """
     random_set = []
     if two:
         for a in range(n):
@@ -151,6 +250,14 @@ def make_random(n, INPUT_SIZE, transformer, two=False):
     return(random_set)
    
 def init_names(INPUT_SIZE, ENCODER):
+    """
+    Initialize the feature names for ALE output
+    
+    Outputs
+    rownames - names for rows (A, T, G, C)
+    colnames - names for columns (from 0 to guide length)
+    seqnames - the names of sequences (gRNA, target)
+    """
     rownames = ["A", "G", "C", "T"]
     colnames = [str(a) for a in range(1, INPUT_SIZE+1)]
     seqnames = ["gRNA", "target"] if ENCODER == "2D-CNN" else ["gRNA"]
@@ -253,13 +360,10 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(args.model))
     model = model.eval()
     rownames, colnames, seqnames = init_names(INPUT_SIZE, ENCODER)
-    #m_shape = (2, 4, INPUT_SIZE) if ENCODER == "2D-CNN" else (4, INPUT_SIZE)
-    #m = np.zeros(shape=m_shape).astype("str")
     if ENCODER == "2D-CNN":
         m, m_shape = get_m(rownames, colnames, INPUT_SIZE, seqnames=seqnames)
     else:
         m, m_shape = get_m(rownames, colnames, INPUT_SIZE)
-    #m = m.reshape(np.product(m_shape)).tolist()
     mfa = ModelForALE(encoder, model, m_shape)
     ale = ALE(mfa.predict, m, ["mean", "variance"])
     random_set = make_random(int(args.number), INPUT_SIZE, transformer, ENCODER == "2D-CNN")

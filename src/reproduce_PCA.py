@@ -2,17 +2,7 @@
 
 This script allows the user to train a PCA model to visualize the gRNA space.
 
-This tool accepts comma separated value files (.csv) as well as excel
-(.xls, .xlsx) files.
-
-This script requires that `pandas` be installed within the Python
-environment you are running this script in.
-
-This file can also be imported as a module and contains the following
-functions:
-
-    * get_spreadsheet_cols - returns the column headers of the file
-    * main - the main function of the script
+This script is not supposed to be ran as a module.
 """
 
 

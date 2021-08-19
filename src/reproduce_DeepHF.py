@@ -1,7 +1,10 @@
-#!/usr/bin/env python
-# coding: utf-8
+"""Script for training the DeepHF model.
 
-# In[1]:
+This script allows the user to train a DeepHF model.
+
+This script is not supposed to be ran as a module.
+"""
+
 
 
 import os
