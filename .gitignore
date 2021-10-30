@@ -15,7 +15,6 @@ src/*.png
 src/test_explanations/*
 src/logos/*
 src/*.fa
-models/*
 paper/*
 src/Untitled.ipynb
 results/*
