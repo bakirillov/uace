@@ -1,4 +1,4 @@
-torch==1.11.0
+torch==1.13.1
 torchvision
 gpytorch==1.4.0
 biopython==1.74
